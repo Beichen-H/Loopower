@@ -46,3 +46,4 @@ meta-skills-library/
 - 固化 Loop Engineering KB v4.0.2 的 `Loop_design_request` / `loop_design_result` 合同、`one_shot` 合法终态与 build/runtime 结果隔离原则。
 - 发布该 Skill 自身的五阶段控制图：`workspace_preflight` → `task_contract_building` → `orthogonal_composing` → `static_validation` → `terminal_export`。
 - 明确资产导出、轻量级 Runtime Engine 接入、语义化版本和贡献质量门禁。
+
