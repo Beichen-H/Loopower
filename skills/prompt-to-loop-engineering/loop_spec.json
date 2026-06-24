@@ -1,0 +1,712 @@
+{
+  "spec_id": "prompt-to-loop-engineering@1.0.0",
+  "version": 1,
+  "skill_version": "1.0.0",
+  "knowledge_contract": "loop-engineering-kb-v4.0.2",
+  "created_from_request": "asset-initialization-v1.0.0",
+  "task_contract_ref": "prompt-to-loop-engineering-build@1",
+  "contract_registry": {
+    "Loop_design_request": "SKILL.md#input-contract-loop_design_request",
+    "loop_design_result": "SKILL.md#output-contract-loop_design_result"
+  },
+  "task_contract": {
+    "id": "prompt-to-loop-engineering-build",
+    "version": 1,
+    "goal": "Convert one Loop_design_request into exactly one KB v4.0.2-conformant loop_design_result without executing the user task.",
+    "deliverables": [
+      {
+        "id": "D-1",
+        "name": "Loop design result",
+        "format": "application/json",
+        "destination": "response payload"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "requirement": "The input is normalized without changing its authorized goal, scope, or policy.",
+        "mandatory": true,
+        "verification_method": "deterministic_check",
+        "evidence_requirements": ["request_shape_check"]
+      },
+      {
+        "id": "AC-2",
+        "requirement": "Every proposed capability and side effect is bound to the supplied runtime and policy snapshots.",
+        "mandatory": true,
+        "verification_method": "deterministic_check",
+        "evidence_requirements": ["capability_binding_check", "policy_binding_check"]
+      },
+      {
+        "id": "AC-3",
+        "requirement": "The generated Task Contract has verifiable deliverables, mandatory criteria, constraints, non-goals, risks, and missing-input semantics.",
+        "mandatory": true,
+        "verification_method": "schema",
+        "evidence_requirements": ["task_contract_schema_check"]
+      },
+      {
+        "id": "AC-4",
+        "requirement": "The selected disposition is the simplest sufficient architecture.",
+        "mandatory": true,
+        "verification_method": "deterministic_check",
+        "evidence_requirements": ["architecture_sufficiency_check"]
+      },
+      {
+        "id": "AC-5",
+        "requirement": "Every emitted workflow or agent-loop specification has complete, bounded, and escapable control flow.",
+        "mandatory": true,
+        "verification_method": "deterministic_check",
+        "evidence_requirements": ["loop_cycle_completeness_check"]
+      },
+      {
+        "id": "AC-6",
+        "requirement": "The design passes all mandatory static checks before spec_ready is permitted.",
+        "mandatory": true,
+        "verification_method": "deterministic_check",
+        "evidence_requirements": ["all_static_checks"]
+      },
+      {
+        "id": "AC-7",
+        "requirement": "The output conforms to loop_design_result and states that no user-task execution or runtime pass occurred.",
+        "mandatory": true,
+        "verification_method": "schema",
+        "evidence_requirements": ["output_contract_check", "build_runtime_separation_check"]
+      }
+    ],
+    "constraints": [
+      "Use only declared runtime capabilities and external policy constraints.",
+      "Do not execute the user task or perform external side effects.",
+      "Do not map build success to runtime success."
+    ],
+    "non_goals": [
+      "Define caller identity or persona.",
+      "Grant tools, credentials, memory, or permissions.",
+      "Run, persist, approve, or deploy the generated design."
+    ],
+    "assumptions": [],
+    "missing_inputs": [],
+    "risk": {
+      "level": "low",
+      "side_effects": [],
+      "sensitive_data": [],
+      "irreversible_actions": []
+    },
+    "scope_change_policy": {
+      "material_change_requires_revalidation": true,
+      "authorization_source": "external controller or policy"
+    }
+  },
+  "architecture": {
+    "mode": "workflow",
+    "execution_patterns": [
+      "prompt_chain",
+      "evaluator_optimizer"
+    ],
+    "topology": {
+      "type": "linear_with_guarded_exits",
+      "parallel_mode": null
+    },
+    "control_gates": [
+      "capability_gate",
+      "policy_gate",
+      "static_validation_gate"
+    ],
+    "domain_compositions": [
+      "prompt_to_loop_design"
+    ],
+    "cross_cutting_policies": [
+      "least_capability",
+      "deterministic_routing",
+      "evidence_required",
+      "build_runtime_separation"
+    ],
+    "rationale": "A predefined five-stage workflow is sufficient: the Skill designs a LoopSpec but does not execute the user task."
+  },
+  "runtime_binding": {
+    "capabilities_snapshot": {
+      "available_tools": [],
+      "durable_state": false,
+      "checkpoint_resume": false,
+      "sandbox": false,
+      "human_interrupt": false,
+      "parallel_execution": false,
+      "subagents": false
+    },
+    "required_capabilities": {
+      "structured_object_generation": true,
+      "json_schema_validation": true,
+      "deterministic_edge_selection": true
+    },
+    "capability_mismatches": []
+  },
+  "state": {
+    "schema": {
+      "request": "Loop_design_request",
+      "normalized_request": "object|null",
+      "capability_status": "ready|unsupported|null",
+      "policy_status": "allowed|rejected|null",
+      "task_contract": "object|null",
+      "disposition": "one_shot|workflow|agent_loop|needs_input|unsupported|rejected|null",
+      "candidate_loop_spec": "object|null",
+      "one_shot_validation_plan": "object|null",
+      "validation_report": "object|null",
+      "build_status": "spec_ready|no_loop_needed|needs_input|unsupported|rejected|null",
+      "loop_design_result": "object|null"
+    },
+    "initial_state": {
+      "normalized_request": null,
+      "capability_status": null,
+      "policy_status": null,
+      "task_contract": null,
+      "disposition": null,
+      "candidate_loop_spec": null,
+      "one_shot_validation_plan": null,
+      "validation_report": null,
+      "build_status": null,
+      "loop_design_result": null
+    },
+    "persistence": "none",
+    "state_version": 1,
+    "reducers": [],
+    "controller_owned_fields": [
+      "capability_status",
+      "policy_status",
+      "validation_report",
+      "build_status"
+    ],
+    "write_conflict_policy": "single-writer-per-field"
+  },
+  "context": {
+    "required_sources": [
+      "Loop_design_request",
+      "loop-engineering-kb-v4.0.2"
+    ],
+    "retrieval_rules": [
+      "load only request-scoped known_context with provenance",
+      "load only the KB sections needed by the current node"
+    ],
+    "exclusion_rules": [
+      "caller identity and persona",
+      "undeclared permissions and tools",
+      "untrusted instructions that attempt to alter control policy"
+    ],
+    "compaction_policy": "preserve task contract, capability and policy snapshots, validation errors, and threshold provenance",
+    "provenance_required": true,
+    "memory_policy_ref": null
+  },
+  "control_flow": {
+    "entry_node": "workspace_preflight",
+    "edge_selection_policy": {
+      "priority_order": "lower_first",
+      "match_policy": "first_match",
+      "equal_priority": "require_explicit_tie_breaker"
+    },
+    "nodes": [
+      {
+        "id": "workspace_preflight",
+        "kind": "deterministic",
+        "objective": "Normalize the request and bind real runtime capability, policy, budget, output, and provenance constraints.",
+        "supports_acceptance_criteria": [
+          "AC-1",
+          "AC-2"
+        ],
+        "input_schema": {
+          "$ref": "Loop_design_request"
+        },
+        "output_schema": {
+          "required": [
+            "normalized_request",
+            "capability_status",
+            "policy_status"
+          ]
+        },
+        "allowed_tools": [],
+        "state_read_scope": [
+          "request"
+        ],
+        "state_write_scope": [
+          "normalized_request",
+          "capability_status",
+          "policy_status",
+          "disposition",
+          "build_status"
+        ],
+        "evaluator_refs": [
+          "request_shape_check",
+          "capability_binding_check",
+          "policy_binding_check"
+        ],
+        "retry_policy_ref": null,
+        "timeout_policy_ref": "local_validation_timeout",
+        "checkpoint_before": false,
+        "checkpoint_after": false
+      },
+      {
+        "id": "task_contract_building",
+        "kind": "model",
+        "objective": "Convert the normalized prompt into a versioned, verifiable Task Contract without executing the user task.",
+        "supports_acceptance_criteria": [
+          "AC-3"
+        ],
+        "input_schema": {
+          "required": [
+            "normalized_request"
+          ]
+        },
+        "output_schema": {
+          "required": [
+            "task_contract"
+          ]
+        },
+        "allowed_tools": [],
+        "state_read_scope": [
+          "normalized_request",
+          "capability_status",
+          "policy_status"
+        ],
+        "state_write_scope": [
+          "task_contract",
+          "disposition",
+          "build_status"
+        ],
+        "evaluator_refs": [
+          "task_contract_schema_check",
+          "acceptance_criterion_verifiability_check"
+        ],
+        "retry_policy_ref": "schema_correction_once",
+        "timeout_policy_ref": "model_node_timeout",
+        "checkpoint_before": false,
+        "checkpoint_after": false
+      },
+      {
+        "id": "orthogonal_composing",
+        "kind": "model",
+        "objective": "Choose the simplest sufficient disposition and independently compose architecture, execution, topology, gates, domain, and cross-cutting policies.",
+        "supports_acceptance_criteria": [
+          "AC-4",
+          "AC-5"
+        ],
+        "input_schema": {
+          "required": [
+            "task_contract"
+          ]
+        },
+        "output_schema": {
+          "required": [
+            "disposition"
+          ]
+        },
+        "allowed_tools": [],
+        "state_read_scope": [
+          "normalized_request",
+          "capability_status",
+          "policy_status",
+          "task_contract"
+        ],
+        "state_write_scope": [
+          "disposition",
+          "candidate_loop_spec",
+          "one_shot_validation_plan",
+          "build_status"
+        ],
+        "evaluator_refs": [
+          "architecture_sufficiency_check",
+          "runtime_capability_check",
+          "loop_cycle_completeness_check"
+        ],
+        "retry_policy_ref": "schema_correction_once",
+        "timeout_policy_ref": "model_node_timeout",
+        "checkpoint_before": false,
+        "checkpoint_after": false
+      },
+      {
+        "id": "static_validation",
+        "kind": "deterministic",
+        "objective": "Validate schema, graph, priorities, state, references, cycles, capabilities, side effects, status mapping, and threshold provenance before export.",
+        "supports_acceptance_criteria": [
+          "AC-6"
+        ],
+        "input_schema": {
+          "required": [
+            "task_contract",
+            "disposition"
+          ]
+        },
+        "output_schema": {
+          "required": [
+            "validation_report",
+            "build_status"
+          ]
+        },
+        "allowed_tools": [],
+        "state_read_scope": [
+          "normalized_request",
+          "capability_status",
+          "policy_status",
+          "task_contract",
+          "disposition",
+          "candidate_loop_spec",
+          "one_shot_validation_plan"
+        ],
+        "state_write_scope": [
+          "validation_report",
+          "build_status"
+        ],
+        "evaluator_refs": [
+          "all_static_checks"
+        ],
+        "retry_policy_ref": null,
+        "timeout_policy_ref": "local_validation_timeout",
+        "checkpoint_before": false,
+        "checkpoint_after": false
+      },
+      {
+        "id": "terminal_export",
+        "kind": "terminal",
+        "objective": "Export one contract-conformant loop_design_result without executing the user task or claiming runtime success.",
+        "supports_acceptance_criteria": [
+          "AC-7"
+        ],
+        "input_schema": {
+          "required": [
+            "disposition",
+            "build_status"
+          ]
+        },
+        "output_schema": {
+          "$ref": "loop_design_result"
+        },
+        "allowed_tools": [],
+        "state_read_scope": [
+          "normalized_request",
+          "capability_status",
+          "policy_status",
+          "task_contract",
+          "disposition",
+          "candidate_loop_spec",
+          "one_shot_validation_plan",
+          "validation_report",
+          "build_status"
+        ],
+        "state_write_scope": [
+          "loop_design_result"
+        ],
+        "evaluator_refs": [
+          "output_contract_check",
+          "build_runtime_separation_check"
+        ],
+        "retry_policy_ref": null,
+        "timeout_policy_ref": "local_validation_timeout",
+        "checkpoint_before": false,
+        "checkpoint_after": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "workspace_preflight",
+        "to": "terminal_export",
+        "condition": "policy_status == rejected",
+        "priority": 10
+      },
+      {
+        "from": "workspace_preflight",
+        "to": "terminal_export",
+        "condition": "capability_status == unsupported",
+        "priority": 20
+      },
+      {
+        "from": "workspace_preflight",
+        "to": "terminal_export",
+        "condition": "disposition == needs_input",
+        "priority": 30
+      },
+      {
+        "from": "workspace_preflight",
+        "to": "task_contract_building",
+        "condition": "policy_status == allowed and capability_status == ready",
+        "priority": 100
+      },
+      {
+        "from": "task_contract_building",
+        "to": "terminal_export",
+        "condition": "task_contract.missing_inputs contains blocking item",
+        "priority": 10
+      },
+      {
+        "from": "task_contract_building",
+        "to": "orthogonal_composing",
+        "condition": "task_contract is schema_valid and has no blocking missing input",
+        "priority": 100
+      },
+      {
+        "from": "orthogonal_composing",
+        "to": "static_validation",
+        "condition": "disposition in [one_shot, workflow, agent_loop, needs_input, unsupported, rejected]",
+        "priority": 100
+      },
+      {
+        "from": "static_validation",
+        "to": "terminal_export",
+        "condition": "validation_report.valid == true and validation_report.errors is empty",
+        "priority": 10
+      },
+      {
+        "from": "static_validation",
+        "to": "terminal_export",
+        "condition": "validation_report.valid == false",
+        "priority": 20
+      }
+    ],
+    "cycles": [],
+    "terminal_nodes": {
+      "passed": [
+        "terminal_export"
+      ],
+      "failed": [],
+      "blocked": [],
+      "needs_approval": [],
+      "stopped": [],
+      "cancelled": []
+    }
+  },
+  "transition_policy": {
+    "authority": "deterministic_controller",
+    "proposal_source_nodes": [],
+    "allowed_targets": [
+      "workspace_preflight",
+      "task_contract_building",
+      "orthogonal_composing",
+      "static_validation",
+      "terminal_export"
+    ],
+    "proposal_schema": {},
+    "controller_validation": "required",
+    "fallback_node": "terminal_export"
+  },
+  "tools": {
+    "contracts": [],
+    "rollback_procedures": [],
+    "permission_bindings": [],
+    "side_effect_policies": [
+      {
+        "id": "design_only",
+        "rule": "No user-task tool execution or external side effect is permitted during specification building."
+      }
+    ]
+  },
+  "evaluation": {
+    "criteria_bindings": [
+      {
+        "criterion_id": "AC-1",
+        "evaluator_ref": "request_shape_check"
+      },
+      {
+        "criterion_id": "AC-2",
+        "evaluator_ref": "capability_binding_check"
+      },
+      {
+        "criterion_id": "AC-3",
+        "evaluator_ref": "task_contract_schema_check"
+      },
+      {
+        "criterion_id": "AC-4",
+        "evaluator_ref": "architecture_sufficiency_check"
+      },
+      {
+        "criterion_id": "AC-5",
+        "evaluator_ref": "loop_cycle_completeness_check"
+      },
+      {
+        "criterion_id": "AC-6",
+        "evaluator_ref": "all_static_checks"
+      },
+      {
+        "criterion_id": "AC-7",
+        "evaluator_ref": "output_contract_check"
+      }
+    ],
+    "evaluator_registry": [
+      "request_shape_check",
+      "capability_binding_check",
+      "policy_binding_check",
+      "task_contract_schema_check",
+      "acceptance_criterion_verifiability_check",
+      "architecture_sufficiency_check",
+      "runtime_capability_check",
+      "loop_cycle_completeness_check",
+      "all_static_checks",
+      "output_contract_check",
+      "build_runtime_separation_check"
+    ],
+    "result_state_path": "validation_report",
+    "controller_writes_results": true,
+    "deterministic_checks": [
+      "acceptance_bindings",
+      "graph_reachability",
+      "edge_condition_observability",
+      "edge_priority_determinism",
+      "state_initialization",
+      "contract_schema_conformance",
+      "cycle_controls",
+      "tool_capability_binding",
+      "side_effect_protection",
+      "state_write_scope",
+      "status_mapping",
+      "threshold_sources",
+      "reference_resolution"
+    ],
+    "independent_review_policy": null
+  },
+  "termination": {
+    "pass_policy": "terminal_export emits exactly one contract-valid loop_design_result; this does not mean the user task passed",
+    "failure_conditions": [
+      "the output contract cannot be serialized",
+      "the controller cannot resolve a required local contract reference"
+    ],
+    "blocked_conditions": [
+      "blocking input cannot be safely defaulted"
+    ],
+    "stop_conditions": [
+      "external controller cancels specification construction"
+    ],
+    "cancellation_policy": "export no executable loop_spec and retain validation evidence"
+  },
+  "policy_registry": {
+    "retry": [
+      {
+        "id": "schema_correction_once",
+        "limit_ref": "model_schema_retry_limit",
+        "applies_to": [
+          "invalid structured model output"
+        ]
+      }
+    ],
+    "timeout": [
+      {
+        "id": "local_validation_timeout",
+        "threshold_ref": "local_validation_timeout"
+      },
+      {
+        "id": "model_node_timeout",
+        "threshold_ref": "model_node_timeout"
+      }
+    ],
+    "stagnation": [],
+    "recovery": [
+      {
+        "id": "non_executable_export",
+        "rule": "On unrepaired design error, export validation errors with a non-spec_ready build status and no executable loop_spec."
+      }
+    ],
+    "checkpoint": [],
+    "budget": [
+      {
+        "id": "design_build_budget",
+        "threshold_refs": [
+          "model_schema_retry_limit",
+          "model_node_timeout",
+          "local_validation_timeout"
+        ],
+        "enforcement": "controller checks before every node"
+      }
+    ],
+    "scope": [
+      {
+        "id": "design_only_scope",
+        "allowed_outputs": [
+          "task_contract",
+          "loop_spec",
+          "one_shot_validation_plan",
+          "validation_report",
+          "build_report",
+          "loop_design_result"
+        ],
+        "forbidden_actions": [
+          "execute the user task",
+          "grant permissions",
+          "perform external side effects",
+          "claim runtime success"
+        ]
+      }
+    ],
+    "observability": [
+      {
+        "id": "design_trace",
+        "events": [
+          "node_start",
+          "node_end",
+          "state_delta",
+          "validation",
+          "terminal_decision"
+        ],
+        "sensitive_data_policy": "minimize and redact according to external runtime policy"
+      }
+    ]
+  },
+  "policies": {
+    "recovery_policy_ref": "non_executable_export",
+    "checkpoint_policy_ref": null,
+    "budget_policy_ref": "design_build_budget",
+    "scope_policy_ref": "design_only_scope",
+    "observability_policy_ref": "design_trace"
+  },
+  "delegation": {
+    "enabled": false,
+    "worker_profiles": [],
+    "handoff_contract_ref": null,
+    "merge_policy": null
+  },
+  "artifacts": {
+    "required_by_acceptance_or_recovery": [
+      "loop_design_result",
+      "validation_report"
+    ],
+    "retention_policy": "external controller policy"
+  },
+  "threshold_register": [
+    {
+      "id": "model_schema_retry_limit",
+      "value": 1,
+      "unit": "attempts",
+      "source": "asset_policy",
+      "rationale": "Allow one bounded correction for malformed structured output, then export a non-executable result.",
+      "calibration_scope": "prompt-to-loop-engineering v1.0.0",
+      "review_trigger": "measured malformed-output rate changes materially"
+    },
+    {
+      "id": "model_node_timeout",
+      "value": 120,
+      "unit": "seconds",
+      "source": "provisional_estimate",
+      "rationale": "Bound each design-time model node until runtime-specific latency data is available.",
+      "calibration_scope": "task contract and architecture composition nodes",
+      "review_trigger": "runtime latency history becomes available or timeout rate exceeds policy"
+    },
+    {
+      "id": "local_validation_timeout",
+      "value": 30,
+      "unit": "seconds",
+      "source": "provisional_estimate",
+      "rationale": "Bound deterministic request, graph, schema, and output validation.",
+      "calibration_scope": "local validation of one design result",
+      "review_trigger": "validation benchmarks become available"
+    }
+  ],
+  "validation": {
+    "schema_version": "loop-spec-v4",
+    "required_checks": [
+      "acceptance_bindings",
+      "graph_reachability",
+      "edge_condition_observability",
+      "edge_priority_determinism",
+      "state_initialization",
+      "contract_schema_conformance",
+      "cycle_controls",
+      "tool_capability_binding",
+      "side_effect_protection",
+      "state_write_scope",
+      "status_mapping",
+      "threshold_sources",
+      "reference_resolution"
+    ]
+  }
+}
