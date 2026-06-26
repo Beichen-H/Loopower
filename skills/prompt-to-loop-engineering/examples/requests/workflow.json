@@ -1,0 +1,21 @@
+{
+  "request_id": "example-workflow-request",
+  "task_prompt": "Design a fixed workflow that validates a configuration and formats it only when validation passes.",
+  "known_context": [],
+  "runtime_capabilities": {
+    "available_tools": [],
+    "durable_state": false,
+    "checkpoint_resume": false,
+    "sandbox": false,
+    "human_interrupt": false,
+    "parallel_execution": false,
+    "subagents": false
+  },
+  "policy_constraints": {
+    "allowed_side_effects": [],
+    "forbidden_actions": [],
+    "approval_rules": []
+  },
+  "budget_envelope": {},
+  "output_requirements": {"format": "application/json"}
+}

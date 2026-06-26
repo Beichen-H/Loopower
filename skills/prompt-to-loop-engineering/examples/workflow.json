@@ -1,0 +1,98 @@
+{
+  "disposition": "workflow",
+  "task_contract": {
+    "id": "validate-and-format-config",
+    "version": 1,
+    "goal": "Validate a supplied configuration and format it only when validation passes.",
+    "deliverables": [{"id": "D-1", "name": "Validated formatted configuration", "format": "application/json", "destination": "response payload"}],
+    "acceptance_criteria": [
+      {"id": "AC-1", "requirement": "Invalid input terminates without a formatted configuration.", "mandatory": true, "verification_method": "deterministic_check", "evidence_requirements": ["schema_check"]},
+      {"id": "AC-2", "requirement": "Valid input is formatted deterministically.", "mandatory": true, "verification_method": "deterministic_check", "evidence_requirements": ["format_check"]}
+    ],
+    "constraints": ["Do not modify configuration values."],
+    "non_goals": ["Repair invalid configuration."],
+    "assumptions": [],
+    "missing_inputs": [],
+    "risk": {"level": "low", "side_effects": [], "sensitive_data": [], "irreversible_actions": []},
+    "scope_change_policy": {"material_change_requires_revalidation": true, "authorization_source": "external controller"}
+  },
+  "loop_spec": {
+    "spec_id": "validate-and-format-config@1",
+    "version": 1,
+    "created_from_request": "example-workflow-request",
+    "task_contract_ref": "validate-and-format-config@1",
+    "architecture": {
+      "mode": "workflow",
+      "execution_patterns": ["prompt_chain"],
+      "topology": {"type": "linear", "parallel_mode": null},
+      "control_gates": [],
+      "domain_compositions": ["configuration_processing"],
+      "cross_cutting_policies": ["observability", "scope_control"],
+      "rationale": "All paths and branches are fixed before execution and require no environment-driven replanning."
+    },
+    "runtime_binding": {
+      "capabilities_snapshot": {"available_tools": [], "durable_state": false, "checkpoint_resume": false, "sandbox": false, "human_interrupt": false, "parallel_execution": false, "subagents": false},
+      "required_capabilities": {},
+      "capability_mismatches": []
+    },
+    "state": {
+      "schema": {"input_valid": "boolean|null", "formatted_config": "object|null"},
+      "initial_state": {"input_valid": null, "formatted_config": null},
+      "persistence": "memory",
+      "state_version": 1,
+      "reducers": [],
+      "controller_owned_fields": ["input_valid"],
+      "write_conflict_policy": "single-writer-per-field"
+    },
+    "context": {
+      "required_sources": ["request configuration", "requested schema"],
+      "retrieval_rules": [],
+      "exclusion_rules": ["unrelated workspace files"],
+      "compaction_policy": "none required",
+      "provenance_required": true,
+      "memory_policy_ref": null
+    },
+    "control_flow": {
+      "entry_node": "validate_config",
+      "edge_selection_policy": {"priority_order": "lower_first", "match_policy": "first_match", "equal_priority": "require_explicit_tie_breaker"},
+      "nodes": [
+        {"id": "validate_config", "kind": "deterministic", "objective": "Validate input and format it only when valid.", "supports_acceptance_criteria": ["AC-1", "AC-2"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": [], "state_write_scope": ["input_valid", "formatted_config"], "evaluator_refs": ["schema_check", "format_check"], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "export_valid", "kind": "terminal", "objective": "Export the validated formatted configuration.", "supports_acceptance_criteria": ["AC-2"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["input_valid", "formatted_config"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "export_invalid", "kind": "terminal", "objective": "Export deterministic validation errors without a formatted configuration.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["input_valid"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false}
+      ],
+      "edges": [
+        {"from": "validate_config", "to": "export_valid", "condition": {"all": [{"fact": "state.input_valid", "operator": "eq", "value": true}]}, "priority": 10},
+        {"from": "validate_config", "to": "export_invalid", "condition": {"all": [{"fact": "state.input_valid", "operator": "eq", "value": false}]}, "priority": 20}
+      ],
+      "cycles": [],
+      "terminal_nodes": {"passed": ["export_valid"], "failed": ["export_invalid"], "blocked": [], "needs_approval": [], "stopped": [], "cancelled": []}
+    },
+    "transition_policy": {"authority": "deterministic_controller", "proposal_source_nodes": [], "allowed_targets": ["validate_config", "export_valid", "export_invalid"], "proposal_schema": {}, "controller_validation": "required", "fallback_node": "export_invalid"},
+    "tools": {"contracts": [], "rollback_procedures": [], "permission_bindings": [], "side_effect_policies": []},
+    "evaluation": {
+      "criteria_bindings": [{"criterion_id": "AC-1", "evaluator_ref": "schema_check"}, {"criterion_id": "AC-2", "evaluator_ref": "format_check"}],
+      "evaluator_registry": ["schema_check", "format_check"],
+      "result_state_path": "input_valid",
+      "controller_writes_results": true,
+      "deterministic_checks": ["schema_check", "format_check"],
+      "independent_review_policy": null
+    },
+    "termination": {"pass_policy": "all mandatory criteria pass", "failure_conditions": ["schema_check fails"], "blocked_conditions": [], "stop_conditions": [], "cancellation_policy": "external controller may cancel before execution"},
+    "policy_registry": {
+      "retry": [], "timeout": [], "stagnation": [], "recovery": [], "checkpoint": [], "budget": [],
+      "scope": [{"id": "config_only", "rule": "Read only the supplied configuration and schema."}],
+      "observability": [{"id": "config_trace", "events": ["validation", "terminal_decision"]}]
+    },
+    "policies": {"recovery_policy_ref": null, "checkpoint_policy_ref": null, "budget_policy_ref": null, "scope_policy_ref": "config_only", "observability_policy_ref": "config_trace"},
+    "delegation": {"enabled": false, "worker_profiles": [], "handoff_contract_ref": null, "merge_policy": null},
+    "artifacts": {"required_by_acceptance_or_recovery": ["formatted configuration or validation errors"], "retention_policy": "response only"},
+    "threshold_register": [],
+    "validation": {"schema_version": "loop-spec-v4", "required_checks": ["acceptance_bindings", "graph_reachability", "edge_condition_observability", "edge_priority_determinism", "state_initialization", "cycle_controls", "tool_capability_binding", "status_mapping", "threshold_sources", "reference_resolution"]}
+  },
+  "one_shot_validation_plan": null,
+  "assumptions": [],
+  "missing_inputs": [],
+  "validation_report": {"valid": true, "errors": [], "warnings": [], "assumptions": []},
+  "rejected_alternatives": [{"alternative": "agent_loop", "reason": "No runtime observation changes the predefined route."}],
+  "build_report": {"status": "spec_ready", "reason": "A deterministic workflow was generated and statically validated.", "execution_performed": false, "user_task_passed": false, "generated_spec_ref": "inline:loop_spec", "validation_report_ref": "inline", "missing_inputs": [], "unsupported_capabilities": [], "policy_rejections": []}
+}

@@ -1,0 +1,92 @@
+{
+  "disposition": "one_shot",
+  "task_contract": {
+    "id": "record-to-json",
+    "version": 1,
+    "goal": "Convert the supplied fixed-field record to JSON without changing field values.",
+    "deliverables": [
+      {
+        "id": "D-1",
+        "name": "Validated JSON record",
+        "format": "application/json",
+        "destination": "response payload"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "requirement": "Output conforms to the supplied JSON Schema.",
+        "mandatory": true,
+        "verification_method": "schema",
+        "evidence_requirements": ["json_schema_check"]
+      },
+      {
+        "id": "AC-2",
+        "requirement": "Every source field appears exactly once with an unchanged value.",
+        "mandatory": true,
+        "verification_method": "deterministic_check",
+        "evidence_requirements": ["field_equality_check"]
+      }
+    ],
+    "constraints": ["Use only the supplied record and schema."],
+    "non_goals": ["Infer, normalize, or enrich missing values."],
+    "assumptions": [],
+    "missing_inputs": [],
+    "risk": {
+      "level": "low",
+      "side_effects": [],
+      "sensitive_data": [],
+      "irreversible_actions": []
+    },
+    "scope_change_policy": {
+      "material_change_requires_revalidation": true,
+      "authorization_source": "external controller"
+    }
+  },
+  "loop_spec": null,
+  "one_shot_validation_plan": {
+    "execution_count": 1,
+    "cycle": null,
+    "checks": [
+      {
+        "id": "json_schema_check",
+        "type": "deterministic",
+        "verifies": ["AC-1"]
+      },
+      {
+        "id": "field_equality_check",
+        "type": "deterministic",
+        "verifies": ["AC-2"]
+      }
+    ]
+  },
+  "assumptions": [],
+  "missing_inputs": [],
+  "validation_report": {
+    "valid": true,
+    "errors": [],
+    "warnings": [],
+    "assumptions": []
+  },
+  "rejected_alternatives": [
+    {
+      "alternative": "workflow",
+      "reason": "One deterministic transformation and validation pass is sufficient."
+    },
+    {
+      "alternative": "agent_loop",
+      "reason": "No environment feedback can change the next action."
+    }
+  ],
+  "build_report": {
+    "status": "no_loop_needed",
+    "reason": "A one-shot transformation with deterministic validation is sufficient.",
+    "execution_performed": false,
+    "user_task_passed": false,
+    "generated_spec_ref": null,
+    "validation_report_ref": "inline",
+    "missing_inputs": [],
+    "unsupported_capabilities": [],
+    "policy_rejections": []
+  }
+}

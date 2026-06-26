@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meta-skills-library.dev/schemas/loop_spec.schema.json",
+  "title": "LoopSpec v4-compatible portable contract",
+  "type": "object",
+  "required": [
+    "spec_id",
+    "version",
+    "created_from_request",
+    "task_contract_ref",
+    "architecture",
+    "runtime_binding",
+    "state",
+    "context",
+    "control_flow",
+    "transition_policy",
+    "tools",
+    "evaluation",
+    "termination",
+    "policy_registry",
+    "policies",
+    "delegation",
+    "artifacts",
+    "threshold_register",
+    "validation"
+  ],
+  "properties": {
+    "spec_id": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "skill_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "knowledge_contract": { "type": "string", "minLength": 1 },
+    "contract_registry": { "type": "object" },
+    "task_contract": { "type": "object" },
+    "created_from_request": { "type": "string", "minLength": 1 },
+    "task_contract_ref": { "type": "string", "minLength": 1 },
+    "architecture": {
+      "type": "object",
+      "required": [
+        "mode",
+        "execution_patterns",
+        "topology",
+        "control_gates",
+        "domain_compositions",
+        "cross_cutting_policies",
+        "rationale"
+      ],
+      "properties": {
+        "mode": { "enum": ["workflow", "agent_loop"] },
+        "execution_patterns": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["prompt_chain", "tool_use", "plan_execute_replan", "evaluator_optimizer"] }
+        },
+        "topology": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "enum": ["linear", "routed", "parallel", "orchestrator_workers", "graph_state_machine"] },
+            "parallel_mode": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "control_gates": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["human_approval", "independent_review", "policy_check"] }
+        },
+        "domain_compositions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "cross_cutting_policies": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["recovery", "checkpointing", "observability", "budget_control", "scope_control"] }
+        },
+        "rationale": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "runtime_binding": {
+      "type": "object",
+      "required": ["capabilities_snapshot", "required_capabilities", "capability_mismatches"],
+      "properties": {
+        "capabilities_snapshot": { "$ref": "loop_design_request.schema.json#/properties/runtime_capabilities" },
+        "required_capabilities": { "$ref": "loop_design_request.schema.json#/properties/runtime_capabilities" },
+        "capability_mismatches": { "type": "array", "maxItems": 0 }
+      },
+      "additionalProperties": false
+    },
+    "state": { "type": "object" },
+    "context": { "type": "object" },
+    "control_flow": {
+      "type": "object",
+      "required": [
+        "entry_node",
+        "edge_selection_policy",
+        "nodes",
+        "edges",
+        "cycles",
+        "terminal_nodes"
+      ],
+      "properties": {
+        "entry_node": { "type": "string", "minLength": 1 },
+        "edge_selection_policy": {
+          "type": "object",
+          "required": ["priority_order", "match_policy", "equal_priority"],
+          "properties": {
+            "priority_order": { "const": "lower_first" },
+            "match_policy": { "const": "first_match" },
+            "equal_priority": { "const": "require_explicit_tie_breaker" }
+          },
+          "additionalProperties": false
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/node" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/edge" }
+        },
+        "cycles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/cycle" }
+        },
+        "terminal_nodes": {
+          "type": "object",
+          "required": [
+            "passed",
+            "failed",
+            "blocked",
+            "needs_approval",
+            "stopped",
+            "cancelled"
+          ],
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "transition_policy": { "type": "object" },
+    "tools": { "type": "object" },
+    "evaluation": { "type": "object" },
+    "termination": { "type": "object" },
+    "policy_registry": { "type": "object" },
+    "policies": { "type": "object" },
+    "delegation": { "type": "object" },
+    "artifacts": { "type": "object" },
+    "threshold_register": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/threshold" }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["schema_version", "required_checks"],
+      "properties": {
+        "schema_version": { "const": "loop-spec-v4" },
+        "required_checks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "objective",
+        "input_schema",
+        "output_schema",
+        "allowed_tools",
+        "state_read_scope",
+        "state_write_scope"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "deterministic",
+            "model",
+            "tool",
+            "worker",
+            "approval",
+            "merge",
+            "terminal"
+          ]
+        },
+        "objective": { "type": "string", "minLength": 1 },
+        "supports_acceptance_criteria": { "type": "array" },
+        "input_schema": { "type": "object" },
+        "output_schema": { "type": "object" },
+        "allowed_tools": { "type": "array" },
+        "state_read_scope": { "type": "array" },
+        "state_write_scope": { "type": "array" },
+        "evaluator_refs": { "type": "array" },
+        "retry_policy_ref": { "type": ["string", "null"] },
+        "timeout_policy_ref": { "type": ["string", "null"] },
+        "checkpoint_before": { "type": "boolean" },
+        "checkpoint_after": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to", "condition", "priority"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "condition": { "$ref": "#/$defs/condition" },
+        "priority": { "type": "integer" },
+        "tie_breaker": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "cycle": {
+      "type": "object",
+      "required": [
+        "id",
+        "node_ids",
+        "progress_signals",
+        "stagnation_policy_ref",
+        "budget_policy_ref",
+        "exit_conditions"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "node_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "progress_signals": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/progress_signal" }
+        },
+        "stagnation_policy_ref": { "type": "string", "minLength": 1 },
+        "budget_policy_ref": { "type": "string", "minLength": 1 },
+        "exit_conditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/condition" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "condition": {
+      "type": "object",
+      "oneOf": [
+        { "required": ["all"], "not": { "required": ["any"] } },
+        { "required": ["any"], "not": { "required": ["all"] } }
+      ],
+      "properties": {
+        "all": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/predicate" } },
+        "any": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/predicate" } }
+      },
+      "additionalProperties": false
+    },
+    "predicate": {
+      "type": "object",
+      "required": ["fact", "operator"],
+      "properties": {
+        "fact": { "type": "string", "pattern": "^(state|controller)\\." },
+        "operator": { "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "is_true", "is_false", "is_empty", "is_not_empty"] },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "progress_signal": {
+      "type": "object",
+      "required": ["fact", "operator", "evidence_ref"],
+      "properties": {
+        "fact": { "type": "string", "pattern": "^(state|controller)\\." },
+        "operator": { "enum": ["increases", "decreases", "changes", "new_unique_item"] },
+        "evidence_ref": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "threshold": {
+      "type": "object",
+      "required": [
+        "id",
+        "value",
+        "unit",
+        "source",
+        "rationale",
+        "calibration_scope",
+        "review_trigger"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "value": { "type": ["number", "integer"] },
+        "unit": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 },
+        "calibration_scope": { "type": "string", "minLength": 1 },
+        "review_trigger": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

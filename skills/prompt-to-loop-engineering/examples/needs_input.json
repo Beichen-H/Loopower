@@ -1,0 +1,81 @@
+{
+  "disposition": "needs_input",
+  "task_contract": {
+    "id": "deploy-unknown-target",
+    "version": 1,
+    "goal": "Design a deployment workflow for the user-selected target environment.",
+    "deliverables": [
+      {
+        "id": "D-1",
+        "name": "Deployment LoopSpec",
+        "format": "application/json",
+        "destination": "response payload"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "requirement": "The design targets the environment explicitly selected by the user.",
+        "mandatory": true,
+        "verification_method": "deterministic_check",
+        "evidence_requirements": ["target_environment_present"]
+      }
+    ],
+    "constraints": ["Do not infer a production target."],
+    "non_goals": ["Execute a deployment."],
+    "assumptions": [],
+    "missing_inputs": [
+      {
+        "id": "MI-1",
+        "description": "Deployment target environment",
+        "blocking": true,
+        "safe_default": null
+      }
+    ],
+    "risk": {
+      "level": "high",
+      "side_effects": ["external deployment"],
+      "sensitive_data": ["deployment credentials"],
+      "irreversible_actions": []
+    },
+    "scope_change_policy": {
+      "material_change_requires_revalidation": true,
+      "authorization_source": "user"
+    }
+  },
+  "loop_spec": null,
+  "one_shot_validation_plan": null,
+  "assumptions": [],
+  "missing_inputs": [
+    {
+      "id": "MI-1",
+      "description": "Choose staging or production.",
+      "blocking": true,
+      "safe_default": null
+    }
+  ],
+  "validation_report": {
+    "valid": false,
+    "errors": [
+      {
+        "code": "BLOCKING_INPUT",
+        "path": "task_contract.missing_inputs[0]",
+        "message": "Deployment target cannot be safely inferred."
+      }
+    ],
+    "warnings": [],
+    "assumptions": []
+  },
+  "rejected_alternatives": [],
+  "build_report": {
+    "status": "needs_input",
+    "reason": "A blocking deployment target is missing.",
+    "execution_performed": false,
+    "user_task_passed": false,
+    "generated_spec_ref": null,
+    "validation_report_ref": "inline",
+    "missing_inputs": ["MI-1"],
+    "unsupported_capabilities": [],
+    "policy_rejections": []
+  }
+}

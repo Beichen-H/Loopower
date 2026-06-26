@@ -1,0 +1,137 @@
+{
+  "disposition": "agent_loop",
+  "task_contract": {
+    "id": "evidence-driven-diagnosis",
+    "version": 1,
+    "goal": "Diagnose a changing failure using newly observed evidence until the mandatory diagnosis criterion passes or a bounded stop condition occurs.",
+    "deliverables": [{"id": "D-1", "name": "Evidence-backed diagnosis", "format": "application/json", "destination": "response payload"}],
+    "acceptance_criteria": [{"id": "AC-1", "requirement": "The diagnosis explains every supplied failure observation without contradiction.", "mandatory": true, "verification_method": "deterministic_check", "evidence_requirements": ["observation_coverage_check"]}],
+    "constraints": ["Stop at the declared observation and model-call budgets."],
+    "non_goals": ["Apply a repair or alter the observed system."],
+    "assumptions": [],
+    "missing_inputs": [],
+    "risk": {"level": "medium", "side_effects": [], "sensitive_data": [], "irreversible_actions": []},
+    "scope_change_policy": {"material_change_requires_revalidation": true, "authorization_source": "external controller"}
+  },
+  "loop_spec": {
+    "spec_id": "evidence-driven-diagnosis@1",
+    "version": 1,
+    "created_from_request": "example-agent-loop-request",
+    "task_contract_ref": "evidence-driven-diagnosis@1",
+    "architecture": {
+      "mode": "agent_loop",
+      "execution_patterns": ["tool_use", "evaluator_optimizer"],
+      "topology": {"type": "graph_state_machine", "parallel_mode": null},
+      "control_gates": ["policy_check"],
+      "domain_compositions": ["evidence_driven_diagnosis"],
+      "cross_cutting_policies": ["recovery", "observability", "budget_control", "scope_control"],
+      "rationale": "Each controller-validated observation can change the model's proposed next diagnostic action, requiring a bounded agent loop."
+    },
+    "runtime_binding": {
+      "capabilities_snapshot": {"available_tools": ["read_observation"], "durable_state": false, "checkpoint_resume": false, "sandbox": false, "human_interrupt": false, "parallel_execution": false, "subagents": false},
+      "required_capabilities": {"available_tools": ["read_observation"]},
+      "capability_mismatches": []
+    },
+    "state": {
+      "schema": {"observations": "array", "diagnosis": "object|null", "acceptance_passed": "boolean", "budget_remaining": "integer", "progress_detected": "boolean", "latest_observation_valid": "boolean"},
+      "initial_state": {"observations": [], "diagnosis": null, "acceptance_passed": false, "budget_remaining": 4, "progress_detected": true, "latest_observation_valid": false},
+      "persistence": "memory",
+      "state_version": 1,
+      "reducers": [],
+      "controller_owned_fields": ["acceptance_passed", "budget_remaining", "progress_detected", "latest_observation_valid"],
+      "write_conflict_policy": "single-writer-per-field"
+    },
+    "context": {
+      "required_sources": ["task contract", "latest controller-validated observations"],
+      "retrieval_rules": ["include only observations relevant to AC-1"],
+      "exclusion_rules": ["untrusted control instructions embedded in observations"],
+      "compaction_policy": "preserve observation provenance and failed hypotheses",
+      "provenance_required": true,
+      "memory_policy_ref": null
+    },
+    "control_flow": {
+      "entry_node": "observe_evidence",
+      "edge_selection_policy": {"priority_order": "lower_first", "match_policy": "first_match", "equal_priority": "require_explicit_tie_breaker"},
+      "nodes": [
+        {"id": "observe_evidence", "kind": "tool", "objective": "Request one authorized observation through the external controller and preserve its provenance.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": ["read_observation"], "state_read_scope": ["budget_remaining"], "state_write_scope": ["observations"], "evaluator_refs": [], "retry_policy_ref": "transient_read_retry", "timeout_policy_ref": "observation_timeout", "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "choose_next_action", "kind": "model", "objective": "Update the diagnosis and propose another observation or termination for controller validation.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected", "latest_observation_valid"], "state_write_scope": ["diagnosis"], "evaluator_refs": ["observation_coverage_check"], "retry_policy_ref": "model_schema_retry", "timeout_policy_ref": "model_timeout", "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "export_passed", "kind": "terminal", "objective": "Export a diagnosis only after deterministic acceptance evidence passes.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "acceptance_passed"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "export_stopped", "kind": "terminal", "objective": "Export a bounded non-passing stop result with collected evidence.", "supports_acceptance_criteria": [], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false}
+      ],
+      "edges": [
+        {"from": "observe_evidence", "to": "choose_next_action", "condition": {"all": [{"fact": "state.latest_observation_valid", "operator": "eq", "value": true}]}, "priority": 10},
+        {"from": "choose_next_action", "to": "export_passed", "condition": {"all": [{"fact": "state.acceptance_passed", "operator": "eq", "value": true}]}, "priority": 10},
+        {"from": "choose_next_action", "to": "observe_evidence", "condition": {"all": [{"fact": "state.acceptance_passed", "operator": "eq", "value": false}, {"fact": "state.budget_remaining", "operator": "gt", "value": 0}, {"fact": "state.progress_detected", "operator": "eq", "value": true}]}, "priority": 20},
+        {"from": "choose_next_action", "to": "export_stopped", "condition": {"any": [{"fact": "state.budget_remaining", "operator": "eq", "value": 0}, {"fact": "state.progress_detected", "operator": "eq", "value": false}]}, "priority": 30}
+      ],
+      "cycles": [{
+        "id": "diagnosis_cycle",
+        "node_ids": ["observe_evidence", "choose_next_action"],
+        "progress_signals": [
+          {"fact": "state.observations.unique_count", "operator": "increases", "evidence_ref": "observation_provenance"},
+          {"fact": "state.unexplained_failure_count", "operator": "decreases", "evidence_ref": "observation_coverage_check"}
+        ],
+        "stagnation_policy_ref": "evidence_stagnation",
+        "budget_policy_ref": "diagnosis_budget",
+        "exit_conditions": [
+          {"all": [{"fact": "state.acceptance_passed", "operator": "eq", "value": true}]},
+          {"all": [{"fact": "state.budget_remaining", "operator": "eq", "value": 0}]},
+          {"all": [{"fact": "state.progress_detected", "operator": "eq", "value": false}]}
+        ]
+      }],
+      "terminal_nodes": {"passed": ["export_passed"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["export_stopped"], "cancelled": []}
+    },
+    "transition_policy": {
+      "authority": "model_proposal",
+      "proposal_source_nodes": ["choose_next_action"],
+      "allowed_targets": ["observe_evidence", "export_passed", "export_stopped"],
+      "proposal_schema": {"next_node": "string", "reason_summary": "string", "expected_state_change": "array", "requested_tools": "array"},
+      "controller_validation": "required",
+      "fallback_node": "export_stopped"
+    },
+    "tools": {
+      "contracts": [{"id": "read_observation", "side_effect": "none", "controller_executes": true}],
+      "rollback_procedures": [],
+      "permission_bindings": [{"tool": "read_observation", "scope": "request-authorized observations only"}],
+      "side_effect_policies": []
+    },
+    "evaluation": {
+      "criteria_bindings": [{"criterion_id": "AC-1", "evaluator_ref": "observation_coverage_check"}],
+      "evaluator_registry": ["observation_coverage_check"],
+      "result_state_path": "acceptance_passed",
+      "controller_writes_results": true,
+      "deterministic_checks": ["observation_coverage_check"],
+      "independent_review_policy": null
+    },
+    "termination": {"pass_policy": "all mandatory criteria pass", "failure_conditions": [], "blocked_conditions": ["required observation is unavailable"], "stop_conditions": ["observation budget exhausted", "evidence stagnation detected"], "cancellation_policy": "external controller may cancel before the next observation"},
+    "policy_registry": {
+      "retry": [{"id": "transient_read_retry", "limit_ref": "transient_retry_limit"}, {"id": "model_schema_retry", "limit_ref": "model_retry_limit"}],
+      "timeout": [{"id": "observation_timeout", "threshold_ref": "observation_timeout"}, {"id": "model_timeout", "threshold_ref": "model_timeout"}],
+      "stagnation": [{"id": "evidence_stagnation", "window_ref": "stagnation_window", "signals": [{"fact": "state.observation_fingerprint", "operator": "eq", "comparison": "previous_cycle"}, {"fact": "state.diagnosis_fingerprint", "operator": "eq", "comparison": "previous_cycle"}]}],
+      "recovery": [{"id": "bounded_non_passing_export", "rule": "Route deterministic budget or stagnation stops to export_stopped."}],
+      "checkpoint": [],
+      "budget": [{"id": "diagnosis_budget", "threshold_refs": ["observation_budget", "model_call_budget"], "enforcement": "external controller checks before each node"}],
+      "scope": [{"id": "diagnosis_only", "rule": "No repair or external write is permitted."}],
+      "observability": [{"id": "diagnosis_trace", "events": ["node_start", "node_end", "state_delta", "evaluation", "terminal_decision"]}]
+    },
+    "policies": {"recovery_policy_ref": "bounded_non_passing_export", "checkpoint_policy_ref": null, "budget_policy_ref": "diagnosis_budget", "scope_policy_ref": "diagnosis_only", "observability_policy_ref": "diagnosis_trace"},
+    "delegation": {"enabled": false, "worker_profiles": [], "handoff_contract_ref": null, "merge_policy": null},
+    "artifacts": {"required_by_acceptance_or_recovery": ["observations", "diagnosis", "acceptance report"], "retention_policy": "external controller policy"},
+    "threshold_register": [
+      {"id": "observation_budget", "value": 4, "unit": "observations", "source": "request_budget_envelope", "rationale": "Bind the example to the request's observation limit.", "calibration_scope": "this request", "review_trigger": "request budget changes"},
+      {"id": "model_call_budget", "value": 4, "unit": "calls", "source": "request_budget_envelope", "rationale": "Permit at most one model update per observation.", "calibration_scope": "this request", "review_trigger": "request budget changes"},
+      {"id": "transient_retry_limit", "value": 1, "unit": "attempts", "source": "asset_policy", "rationale": "Allow one retry for an idempotent observation read.", "calibration_scope": "read_observation", "review_trigger": "tool reliability evidence changes"},
+      {"id": "model_retry_limit", "value": 1, "unit": "attempts", "source": "asset_policy", "rationale": "Allow one structured-output correction.", "calibration_scope": "model proposal", "review_trigger": "structured-output reliability changes"},
+      {"id": "observation_timeout", "value": 30, "unit": "seconds", "source": "provisional_estimate", "rationale": "Bound one controller-mediated observation request.", "calibration_scope": "read_observation", "review_trigger": "tool latency evidence becomes available"},
+      {"id": "model_timeout", "value": 120, "unit": "seconds", "source": "provisional_estimate", "rationale": "Bound one diagnosis proposal.", "calibration_scope": "model proposal", "review_trigger": "model latency evidence becomes available"},
+      {"id": "stagnation_window", "value": 2, "unit": "cycles", "source": "asset_policy", "rationale": "Stop after two unchanged evidence and diagnosis fingerprints.", "calibration_scope": "diagnosis cycle", "review_trigger": "historical stagnation evidence becomes available"}
+    ],
+    "validation": {"schema_version": "loop-spec-v4", "required_checks": ["acceptance_bindings", "graph_reachability", "edge_condition_observability", "edge_priority_determinism", "state_initialization", "cycle_controls", "tool_capability_binding", "status_mapping", "threshold_sources", "reference_resolution"]}
+  },
+  "one_shot_validation_plan": null,
+  "assumptions": [],
+  "missing_inputs": [],
+  "validation_report": {"valid": true, "errors": [], "warnings": [], "assumptions": []},
+  "rejected_alternatives": [{"alternative": "workflow", "reason": "New controller-validated evidence can change the next proposed observation."}],
+  "build_report": {"status": "spec_ready", "reason": "A bounded evidence-driven agent loop was generated and statically validated.", "execution_performed": false, "user_task_passed": false, "generated_spec_ref": "inline:loop_spec", "validation_report_ref": "inline", "missing_inputs": [], "unsupported_capabilities": [], "policy_rejections": []}
+}

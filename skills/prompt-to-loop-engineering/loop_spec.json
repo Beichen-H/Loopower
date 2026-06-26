@@ -1,9 +1,9 @@
 {
-  "spec_id": "prompt-to-loop-engineering@1.0.0",
+  "spec_id": "prompt-to-loop-engineering@1.2.0",
   "version": 1,
-  "skill_version": "1.0.0",
+  "skill_version": "1.2.0",
   "knowledge_contract": "loop-engineering-kb-v4.0.2",
-  "created_from_request": "asset-initialization-v1.0.0",
+  "created_from_request": "capability-bound-static-validation-v1.2.0",
   "task_contract_ref": "prompt-to-loop-engineering-build@1",
   "contract_registry": {
     "Loop_design_request": "SKILL.md#input-contract-loop_design_request",
@@ -102,22 +102,19 @@
       "evaluator_optimizer"
     ],
     "topology": {
-      "type": "linear_with_guarded_exits",
+      "type": "linear",
       "parallel_mode": null
     },
     "control_gates": [
-      "capability_gate",
-      "policy_gate",
-      "static_validation_gate"
+      "policy_check"
     ],
     "domain_compositions": [
       "prompt_to_loop_design"
     ],
     "cross_cutting_policies": [
-      "least_capability",
-      "deterministic_routing",
-      "evidence_required",
-      "build_runtime_separation"
+      "observability",
+      "budget_control",
+      "scope_control"
     ],
     "rationale": "A predefined five-stage workflow is sufficient: the Skill designs a LoopSpec but does not execute the user task."
   },
@@ -131,11 +128,7 @@
       "parallel_execution": false,
       "subagents": false
     },
-    "required_capabilities": {
-      "structured_object_generation": true,
-      "json_schema_validation": true,
-      "deterministic_edge_selection": true
-    },
+    "required_capabilities": {},
     "capability_mismatches": []
   },
   "state": {
@@ -153,6 +146,7 @@
       "loop_design_result": "object|null"
     },
     "initial_state": {
+      "request": null,
       "normalized_request": null,
       "capability_status": null,
       "policy_status": null,
@@ -404,55 +398,55 @@
       {
         "from": "workspace_preflight",
         "to": "terminal_export",
-        "condition": "policy_status == rejected",
+        "condition": {"all": [{"fact": "state.policy_status", "operator": "eq", "value": "rejected"}]},
         "priority": 10
       },
       {
         "from": "workspace_preflight",
         "to": "terminal_export",
-        "condition": "capability_status == unsupported",
+        "condition": {"all": [{"fact": "state.capability_status", "operator": "eq", "value": "unsupported"}]},
         "priority": 20
       },
       {
         "from": "workspace_preflight",
         "to": "terminal_export",
-        "condition": "disposition == needs_input",
+        "condition": {"all": [{"fact": "state.disposition", "operator": "eq", "value": "needs_input"}]},
         "priority": 30
       },
       {
         "from": "workspace_preflight",
         "to": "task_contract_building",
-        "condition": "policy_status == allowed and capability_status == ready",
+        "condition": {"all": [{"fact": "state.policy_status", "operator": "eq", "value": "allowed"}, {"fact": "state.capability_status", "operator": "eq", "value": "ready"}]},
         "priority": 100
       },
       {
         "from": "task_contract_building",
         "to": "terminal_export",
-        "condition": "task_contract.missing_inputs contains blocking item",
+        "condition": {"all": [{"fact": "controller.task_contract_has_blocking_input", "operator": "eq", "value": true}]},
         "priority": 10
       },
       {
         "from": "task_contract_building",
         "to": "orthogonal_composing",
-        "condition": "task_contract is schema_valid and has no blocking missing input",
+        "condition": {"all": [{"fact": "controller.task_contract_schema_valid", "operator": "eq", "value": true}, {"fact": "controller.task_contract_has_blocking_input", "operator": "eq", "value": false}]},
         "priority": 100
       },
       {
         "from": "orthogonal_composing",
         "to": "static_validation",
-        "condition": "disposition in [one_shot, workflow, agent_loop, needs_input, unsupported, rejected]",
+        "condition": {"all": [{"fact": "state.disposition", "operator": "in", "value": ["one_shot", "workflow", "agent_loop", "needs_input", "unsupported", "rejected"]}]},
         "priority": 100
       },
       {
         "from": "static_validation",
         "to": "terminal_export",
-        "condition": "validation_report.valid == true and validation_report.errors is empty",
+        "condition": {"all": [{"fact": "state.validation_report.valid", "operator": "eq", "value": true}, {"fact": "state.validation_report.errors", "operator": "is_empty"}]},
         "priority": 10
       },
       {
         "from": "static_validation",
         "to": "terminal_export",
-        "condition": "validation_report.valid == false",
+        "condition": {"all": [{"fact": "state.validation_report.valid", "operator": "eq", "value": false}]},
         "priority": 20
       }
     ],
@@ -669,7 +663,7 @@
       "unit": "attempts",
       "source": "asset_policy",
       "rationale": "Allow one bounded correction for malformed structured output, then export a non-executable result.",
-      "calibration_scope": "prompt-to-loop-engineering v1.0.0",
+      "calibration_scope": "prompt-to-loop-engineering v1.2.0",
       "review_trigger": "measured malformed-output rate changes materially"
     },
     {

@@ -1,0 +1,21 @@
+{
+  "request_id": "example-agent-loop-request",
+  "task_prompt": "Design a bounded evidence-driven diagnosis loop in which each new observation may change the next diagnostic action.",
+  "known_context": [],
+  "runtime_capabilities": {
+    "available_tools": ["read_observation"],
+    "durable_state": false,
+    "checkpoint_resume": false,
+    "sandbox": false,
+    "human_interrupt": false,
+    "parallel_execution": false,
+    "subagents": false
+  },
+  "policy_constraints": {
+    "allowed_side_effects": [],
+    "forbidden_actions": ["modify observed system"],
+    "approval_rules": []
+  },
+  "budget_envelope": {"max_observations": 4, "max_model_calls": 4},
+  "output_requirements": {"format": "application/json"}
+}

@@ -1,0 +1,72 @@
+{
+  "disposition": "unsupported",
+  "task_contract": {
+    "id": "resume-long-running-job",
+    "version": 1,
+    "goal": "Design a resumable workflow for a long-running data-processing job.",
+    "deliverables": [
+      {
+        "id": "D-1",
+        "name": "Resumable workflow specification",
+        "format": "application/json",
+        "destination": "response payload"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "requirement": "The workflow can resume from a durable checkpoint after process restart.",
+        "mandatory": true,
+        "verification_method": "deterministic_check",
+        "evidence_requirements": ["checkpoint_capability_binding"]
+      }
+    ],
+    "constraints": ["Use only capabilities declared by the runtime."],
+    "non_goals": ["Emulate durable state in model context."],
+    "assumptions": [],
+    "missing_inputs": [],
+    "risk": {
+      "level": "medium",
+      "side_effects": [],
+      "sensitive_data": [],
+      "irreversible_actions": []
+    },
+    "scope_change_policy": {
+      "material_change_requires_revalidation": true,
+      "authorization_source": "external controller"
+    }
+  },
+  "loop_spec": null,
+  "one_shot_validation_plan": null,
+  "assumptions": [],
+  "missing_inputs": [],
+  "validation_report": {
+    "valid": true,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "CAPABILITY_MISMATCH",
+        "path": "runtime_capabilities.checkpoint_resume",
+        "message": "The supplied runtime cannot resume checkpoints."
+      }
+    ],
+    "assumptions": []
+  },
+  "rejected_alternatives": [
+    {
+      "alternative": "model-memory checkpoint",
+      "reason": "Model context is not durable runtime state."
+    }
+  ],
+  "build_report": {
+    "status": "unsupported",
+    "reason": "The runtime lacks durable_state and checkpoint_resume capabilities.",
+    "execution_performed": false,
+    "user_task_passed": false,
+    "generated_spec_ref": null,
+    "validation_report_ref": "inline",
+    "missing_inputs": [],
+    "unsupported_capabilities": ["durable_state", "checkpoint_resume"],
+    "policy_rejections": []
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "request_id": "example-needs-input-request",
+  "task_prompt": "Design a deployment workflow for my selected target, but no target was supplied.",
+  "known_context": [],
+  "runtime_capabilities": {
+    "available_tools": [],
+    "durable_state": false,
+    "checkpoint_resume": false,
+    "sandbox": false,
+    "human_interrupt": false,
+    "parallel_execution": false,
+    "subagents": false
+  },
+  "policy_constraints": {
+    "allowed_side_effects": [],
+    "forbidden_actions": ["deploy without an explicit target"],
+    "approval_rules": []
+  },
+  "budget_envelope": {},
+  "output_requirements": {"format": "application/json"}
+}

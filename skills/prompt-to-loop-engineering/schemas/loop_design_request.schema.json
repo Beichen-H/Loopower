@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meta-skills-library.dev/schemas/loop_design_request.schema.json",
+  "title": "Loop Design Request",
+  "type": "object",
+  "required": [
+    "request_id",
+    "task_prompt",
+    "known_context",
+    "runtime_capabilities",
+    "policy_constraints",
+    "budget_envelope",
+    "output_requirements"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_prompt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "known_context": {
+      "type": "array"
+    },
+    "runtime_capabilities": {
+      "type": "object",
+      "properties": {
+        "available_tools": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "durable_state": { "type": "boolean", "default": false },
+        "checkpoint_resume": { "type": "boolean", "default": false },
+        "sandbox": { "type": "boolean", "default": false },
+        "human_interrupt": { "type": "boolean", "default": false },
+        "parallel_execution": { "type": "boolean", "default": false },
+        "subagents": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+    "policy_constraints": {
+      "type": "object",
+      "required": [
+        "allowed_side_effects",
+        "forbidden_actions",
+        "approval_rules"
+      ],
+      "properties": {
+        "allowed_side_effects": { "type": "array" },
+        "forbidden_actions": { "type": "array" },
+        "approval_rules": { "type": "array" }
+      },
+      "additionalProperties": false
+    },
+    "budget_envelope": {
+      "type": "object"
+    },
+    "output_requirements": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

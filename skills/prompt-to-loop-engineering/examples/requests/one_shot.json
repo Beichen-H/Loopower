@@ -1,0 +1,21 @@
+{
+  "request_id": "example-one-shot-request",
+  "task_prompt": "Convert the supplied fixed-field record to JSON and validate it against the supplied schema.",
+  "known_context": [],
+  "runtime_capabilities": {
+    "available_tools": [],
+    "durable_state": false,
+    "checkpoint_resume": false,
+    "sandbox": false,
+    "human_interrupt": false,
+    "parallel_execution": false,
+    "subagents": false
+  },
+  "policy_constraints": {
+    "allowed_side_effects": [],
+    "forbidden_actions": [],
+    "approval_rules": []
+  },
+  "budget_envelope": {},
+  "output_requirements": {"format": "application/json"}
+}

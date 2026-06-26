@@ -1,0 +1,7 @@
+interface:
+  display_name: "Prompt to Loop Engineering"
+  short_description: "Build capability-bound static LoopSpec designs"
+  default_prompt: "Use $prompt-to-loop-engineering to build and statically validate a KB v4.0.2 loop_design_result against my declared runtime capabilities without executing the task."
+
+policy:
+  allow_implicit_invocation: true
