@@ -5,7 +5,7 @@ description: Use when a natural-language task must be converted into a role-neut
 
 # Prompt to Loop Engineering
 
-**Skill version:** `1.2.0`
+**Skill version:** `1.3.0`
 **Normative contract:** Loop Engineering KB `v4.0.2`
 **Self-design graph:** [`loop_spec.json`](loop_spec.json)
 
@@ -18,7 +18,8 @@ For every invocation, the agent:
 3. MUST generate exactly one `loop_design_result` and save it as JSON.
 4. MUST run `scripts/validate_design_result.py` with both documents before returning the result.
 5. MUST NOT emit `spec_ready` when validation fails. Correct and revalidate the design, or return a non-executable disposition with the validation errors preserved.
-6. MUST NOT execute the user task, invoke a generated node or tool, advance a generated edge, or report runtime success.
+6. MUST NOT execute the user task, invoke a generated node or tool, advance a generated edge, or report runtime success during design validation.
+7. MUST NOT create or require an independent Runtime Engine. Codex is the host executor when the user explicitly asks to use or continue a generated scaffold.
 
 Example validation command:
 
@@ -27,13 +28,13 @@ python scripts/validate_design_result.py path/to/loop_design_result.json \
   --request path/to/Loop_design_request.json
 ```
 
-This Skill contains no Runtime Engine. Runtime capabilities are constraints supplied by the caller so the generated blueprint matches a real downstream environment. Any later execution belongs to a separate external controller.
+This Skill contains no Runtime Engine and must never scaffold one. Runtime capabilities are constraints supplied by the caller so generated LoopSpec and Agent Config Scaffold files match the real Codex session and project permissions.
 
 ## Purpose and boundary
 
 Transform one natural-language task request into a deterministic `loop_design_result`. Select the simplest sufficient disposition: `one_shot`, `workflow`, `agent_loop`, `needs_input`, `unsupported`, or `rejected`.
 
-This Skill performs design-time analysis only. It does not execute the user's task, grant permissions, invent runtime capabilities, persist a generated design, or claim that the user task passed. The external controller owns invocation, policy, tool execution, state, approval, and any later Runtime Result.
+This Skill performs design-time analysis and Codex-native configuration scaffolding only. It does not grant permissions, invent runtime capabilities, or claim that the user task passed. When the user asks to run or continue the generated loop, Codex reads the persisted scaffold and acts as the host executor under the active session permissions.
 
 ## Input contract: `Loop_design_request`
 
@@ -109,6 +110,50 @@ Machine-readable schemas:
 
 - [`schemas/loop_design_result.schema.json`](schemas/loop_design_result.schema.json)
 - [`schemas/loop_spec.schema.json`](schemas/loop_spec.schema.json)
+- [`schemas/agent_manifest.schema.json`](schemas/agent_manifest.schema.json)
+
+## Codex-native Agent Config Scaffold
+
+When the user asks Codex to create a project-local loop agent, emit a lightweight Agent Config Scaffold under `.codex-loop/`. This scaffold is persistent configuration, not a database and not an independent Runtime Engine.
+
+Required layout:
+
+```text
+.codex-loop/
+├── loop_spec.json
+├── agent_manifest.json
+├── guardrails.json
+├── subagents/
+│   ├── planner.md
+│   └── executor.md
+└── .status
+```
+
+Optional third sub-agent prompt:
+
+```text
+.codex-loop/subagents/reviewer.md
+```
+
+Scaffold rules:
+
+- `loop_spec.json` stores the loop rules, exit signals, budgets, terminal nodes, and capability binding.
+- `agent_manifest.json` binds the main Codex agent to the LoopSpec, guardrails, tool bindings, knowledge bindings, sub-agent prompts, and resume policy.
+- `guardrails.json` stores forbidden commands, write boundaries, approval-required actions, and stop conditions.
+- `subagents/*.md` stores compact role prompts for Codex to read when a loop node requires that specialization.
+- `.status` is optional and must contain only one current stage or node id. Do not create `state.json`, a database, queue, checkpoint store, or hidden Runtime Engine inside the Skill or scaffold.
+
+Codex is the host executor: on continuation, it MUST read `.codex-loop/agent_manifest.json`, `.codex-loop/loop_spec.json`, `.codex-loop/guardrails.json`, the relevant sub-agent prompt, and `.status` if present before taking action. Sub-agent use is allowed only when the manifest and `Loop_design_request.runtime_capabilities.subagents=true` permit it.
+
+Machine-readable manifest contract: [`schemas/agent_manifest.schema.json`](schemas/agent_manifest.schema.json).
+
+After generating or modifying `.codex-loop/`, Codex MUST run:
+
+```bash
+python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_codex_loop_scaffold.py .codex-loop
+```
+
+Use the repository-relative script path instead when working inside this asset repository: `scripts/validate_codex_loop_scaffold.py`.
 
 ## Procedure
 

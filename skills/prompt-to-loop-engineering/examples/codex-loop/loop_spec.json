@@ -1,0 +1,88 @@
+{
+  "spec_id": "codex-native-feature-loop@1",
+  "version": 1,
+  "created_from_request": "example-codex-loop-scaffold",
+  "task_contract_ref": "codex-native-feature-loop@1",
+  "architecture": {
+    "mode": "agent_loop",
+    "execution_patterns": ["plan_execute_replan", "tool_use", "evaluator_optimizer"],
+    "topology": {"type": "orchestrator_workers", "parallel_mode": null},
+    "control_gates": ["policy_check", "independent_review"],
+    "domain_compositions": ["codex_project_feature_delivery"],
+    "cross_cutting_policies": ["observability", "budget_control", "scope_control"],
+    "rationale": "Codex coordinates a compact planner/executor loop and reads persisted prompts when each specialization is needed."
+  },
+  "runtime_binding": {
+    "capabilities_snapshot": {
+      "available_tools": ["read_files", "edit_files", "run_tests"],
+      "durable_state": false,
+      "checkpoint_resume": false,
+      "sandbox": true,
+      "human_interrupt": true,
+      "parallel_execution": false,
+      "subagents": true
+    },
+    "required_capabilities": {
+      "available_tools": ["read_files", "edit_files", "run_tests"],
+      "sandbox": true,
+      "human_interrupt": true,
+      "subagents": true
+    },
+    "capability_mismatches": []
+  },
+  "state": {
+    "schema": {
+      "current_stage": "string",
+      "plan_ready": "boolean",
+      "implementation_ready": "boolean",
+      "validation_passed": "boolean",
+      "budget_remaining": "integer"
+    },
+    "initial_state": {
+      "current_stage": "planner",
+      "plan_ready": false,
+      "implementation_ready": false,
+      "validation_passed": false,
+      "budget_remaining": 5
+    },
+    "persistence": "status_file",
+    "state_version": 1,
+    "reducers": [],
+    "controller_owned_fields": ["current_stage", "validation_passed", "budget_remaining"],
+    "write_conflict_policy": "single-writer-per-field"
+  },
+  "control_flow": {
+    "entry_node": "planner",
+    "edge_selection_policy": {
+      "priority_order": "lower_first",
+      "match_policy": "first_match",
+      "equal_priority": "require_explicit_tie_breaker"
+    },
+    "nodes": [
+      {"id": "planner", "kind": "model", "objective": "Read the project context and produce a bounded implementation plan.", "allowed_tools": ["read_files"]},
+      {"id": "executor", "kind": "model", "objective": "Apply the approved plan inside the declared write boundaries.", "allowed_tools": ["read_files", "edit_files", "run_tests"]},
+      {"id": "terminal_export", "kind": "terminal", "objective": "Export completion, blocked, or stopped status with validation evidence.", "allowed_tools": []}
+    ],
+    "edges": [
+      {"from": "planner", "to": "executor", "condition": {"all": [{"fact": "state.plan_ready", "operator": "eq", "value": true}]}, "priority": 10},
+      {"from": "executor", "to": "planner", "condition": {"all": [{"fact": "state.validation_passed", "operator": "eq", "value": false}, {"fact": "state.budget_remaining", "operator": "gt", "value": 0}]}, "priority": 20},
+      {"from": "executor", "to": "terminal_export", "condition": {"any": [{"fact": "state.validation_passed", "operator": "eq", "value": true}, {"fact": "state.budget_remaining", "operator": "eq", "value": 0}]}, "priority": 30}
+    ],
+    "cycles": [
+      {
+        "id": "bounded_plan_execute_cycle",
+        "node_ids": ["planner", "executor"],
+        "progress_signals": [
+          {"fact": "state.implementation_ready", "operator": "changes", "evidence_ref": "test_or_diff_evidence"}
+        ],
+        "stagnation_policy_ref": "no_new_diff_after_two_cycles",
+        "budget_policy_ref": "loop_iteration_budget",
+        "exit_conditions": [
+          {"all": [{"fact": "state.validation_passed", "operator": "eq", "value": true}]},
+          {"all": [{"fact": "state.budget_remaining", "operator": "eq", "value": 0}]}
+        ]
+      }
+    ],
+    "terminal_nodes": {"passed": ["terminal_export"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["terminal_export"], "cancelled": []}
+  }
+}

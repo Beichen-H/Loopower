@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "guardrail_set_id": "codex-native-feature-guardrails@1",
+  "forbidden_commands": [
+    {
+      "id": "no_destructive_git",
+      "description": "Do not run destructive Git commands unless the user explicitly asks.",
+      "match": {"type": "command_prefix", "value": "git reset --hard"}
+    },
+    {
+      "id": "no_external_runtime",
+      "description": "Do not create a runtime engine, queue, database, or checkpoint store inside .codex-loop.",
+      "match": {"type": "path_glob", "value": ".codex-loop/runtime/**"}
+    }
+  ],
+  "write_boundaries": [
+    {"id": "workspace_scope", "path": ".", "mode": "workspace_write"},
+    {"id": "codex_loop_scope", "path": ".codex-loop", "mode": "workspace_write"}
+  ],
+  "approval_required_actions": [
+    {
+      "id": "no_network_without_approval",
+      "description": "Ask before using network access or installing packages.",
+      "match": {"type": "condition", "value": "network_or_package_install"}
+    }
+  ],
+  "stop_conditions": [
+    {
+      "id": "stop_on_guardrail_violation",
+      "description": "Stop and report when a requested action violates this guardrail set.",
+      "match": {"type": "condition", "value": "guardrail_violation_detected"}
+    }
+  ]
+}

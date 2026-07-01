@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "manifest_id": "codex-native-feature-agent@1",
+  "created_by_skill": {
+    "name": "prompt-to-loop-engineering",
+    "version": "1.3.0"
+  },
+  "codex_host": {
+    "executor": "codex",
+    "independent_runtime_engine": false,
+    "execution_boundary": "Codex reads the persisted scaffold and advances work only under the active user/session permissions."
+  },
+  "task_binding": {
+    "request_id": "example-codex-loop-scaffold",
+    "design_result_ref": "examples/agent_loop.json",
+    "loop_spec_ref": ".codex-loop/loop_spec.json"
+  },
+  "loop_binding": {
+    "loop_spec_path": ".codex-loop/loop_spec.json",
+    "status_path": ".codex-loop/.status",
+    "status_format": "single_current_stage_id",
+    "resume_entry_policy": "read_status_then_validate_stage"
+  },
+  "guardrails_ref": ".codex-loop/guardrails.json",
+  "subagents": [
+    {
+      "id": "planner",
+      "prompt_path": ".codex-loop/subagents/planner.md",
+      "activation_nodes": ["planner"],
+      "responsibilities": ["Clarify scope", "Produce a bounded plan", "Name verification evidence before implementation"],
+      "allowed_tools": ["read_files"],
+      "output_contract": {"format": "markdown", "required_fields": ["Plan", "Risks", "Verification"]}
+    },
+    {
+      "id": "executor",
+      "prompt_path": ".codex-loop/subagents/executor.md",
+      "activation_nodes": ["executor"],
+      "responsibilities": ["Implement the approved plan", "Respect guardrails", "Run declared validation"],
+      "allowed_tools": ["read_files", "edit_files", "run_tests"],
+      "output_contract": {"format": "markdown", "required_fields": ["Changes", "Validation", "Next stage"]}
+    }
+  ],
+  "tool_bindings": [
+    {"name": "read_files", "purpose": "Inspect project files needed for planning and validation.", "permission_mode": "read_only", "guardrail_refs": ["workspace_scope"]},
+    {"name": "edit_files", "purpose": "Modify files inside the active workspace only.", "permission_mode": "workspace_write", "guardrail_refs": ["workspace_scope", "no_destructive_git"]},
+    {"name": "run_tests", "purpose": "Run project-local deterministic tests.", "permission_mode": "workspace_write", "guardrail_refs": ["no_network_without_approval"]}
+  ],
+  "knowledge_bindings": [
+    {"id": "project_readme", "source_ref": "README.md", "access_mode": "read_only", "provenance_required": true}
+  ],
+  "resume_policy": {
+    "context_source_order": [
+      ".codex-loop/agent_manifest.json",
+      ".codex-loop/loop_spec.json",
+      ".codex-loop/guardrails.json",
+      ".codex-loop/.status",
+      ".codex-loop/subagents/"
+    ],
+    "missing_status_behavior": "start_at_entry_node",
+    "forbidden_resume_behavior": "stop_and_report_guardrail_violation"
+  }
+}

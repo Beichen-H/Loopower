@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,7 +45,10 @@ class SkillSurfaceTests(unittest.TestCase):
             "schemas/loop_design_request.schema.json",
             "schemas/loop_design_result.schema.json",
             "schemas/loop_spec.schema.json",
+            "schemas/agent_manifest.schema.json",
+            "schemas/guardrails.schema.json",
             "scripts/validate_design_result.py",
+            "scripts/validate_codex_loop_scaffold.py",
             "examples/one_shot.json",
             "examples/workflow.json",
             "examples/agent_loop.json",
@@ -53,6 +59,11 @@ class SkillSurfaceTests(unittest.TestCase):
             "examples/requests/agent_loop.json",
             "examples/requests/needs_input.json",
             "examples/requests/unsupported.json",
+            "examples/codex-loop/loop_spec.json",
+            "examples/codex-loop/agent_manifest.json",
+            "examples/codex-loop/guardrails.json",
+            "examples/codex-loop/subagents/planner.md",
+            "examples/codex-loop/subagents/executor.md",
         ]
         missing = [relative for relative in required if not (SKILL_ROOT / relative).is_file()]
         self.assertEqual(missing, [], f"Missing runtime-free assets: {missing}")
@@ -71,8 +82,12 @@ class SkillSurfaceTests(unittest.TestCase):
     def test_release_version_is_consistent(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `1.2.0`", skill)
-        self.assertIn("### v1.2.0 (2026-06-24)", readme)
+        readme_cn_path = REPO_ROOT / "README-CN.md"
+        self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
+        readme_cn = readme_cn_path.read_text(encoding="utf-8")
+        self.assertIn("**Skill version:** `1.3.0`", skill)
+        self.assertIn("### v1.3.0 (2026-06-30)", readme)
+        self.assertIn("### v1.3.0 (2026-06-30)", readme_cn)
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -80,13 +95,142 @@ class SkillSurfaceTests(unittest.TestCase):
         self.assertIn("MUST NOT execute the user task", content)
         self.assertFalse((SKILL_ROOT / "runtime").exists(), "Runtime Engine must stay external")
 
-    def test_generated_python_cache_is_not_packaged(self) -> None:
-        caches = [
-            path.relative_to(SKILL_ROOT).as_posix()
-            for path in SKILL_ROOT.rglob("*")
-            if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}
+    def test_codex_native_agent_config_scaffold_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "Codex-native Agent Config Scaffold",
+            ".codex-loop/",
+            "agent_manifest.json",
+            "guardrails.json",
+            "subagents/",
+            "MUST NOT create or require an independent Runtime Engine",
+            "Codex is the host executor",
+            "schemas/agent_manifest.schema.json",
+            "scripts/validate_codex_loop_scaffold.py",
         ]
-        self.assertEqual(caches, [], f"Generated Python cache must not be packaged: {caches}")
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing scaffold contract phrases: {missing}")
+
+    def test_readmes_describe_public_clone_install_and_codex_usage(self) -> None:
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
+        for content in (readme, readme_cn):
+            for phrase in [
+                "git clone",
+                "install_local.py --verify",
+                "$prompt-to-loop-engineering",
+                "validate_codex_loop_scaffold.py",
+                ".codex-loop/",
+            ]:
+                self.assertIn(phrase, content)
+
+    def test_agent_manifest_schema_contract_has_core_scaffold_fields(self) -> None:
+        import json
+
+        schema_path = SKILL_ROOT / "schemas" / "agent_manifest.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        self.assertEqual(schema["title"], "Codex Agent Manifest")
+        required = set(schema["required"])
+        self.assertGreaterEqual(
+            required,
+            {
+                "schema_version",
+                "manifest_id",
+                "codex_host",
+                "loop_binding",
+                "guardrails_ref",
+                "subagents",
+                "tool_bindings",
+                "knowledge_bindings",
+                "resume_policy",
+            },
+        )
+        self.assertFalse(
+            schema["properties"]["codex_host"]["properties"]["independent_runtime_engine"][
+                "const"
+            ]
+        )
+
+    def test_generated_python_cache_is_not_packaged(self) -> None:
+        installer = (REPO_ROOT / "install_local.py").read_text(encoding="utf-8")
+        for token in ['"__pycache__"', '".pyc"', '".pyo"']:
+            self.assertIn(token, installer)
+
+    def test_local_install_scripts_are_packaged_and_documented(self) -> None:
+        required = ["install_local.py", "install_local.ps1"]
+        missing = [relative for relative in required if not (REPO_ROOT / relative).is_file()]
+        self.assertEqual(missing, [], f"Missing local install scripts: {missing}")
+
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        for phrase in [
+            "## Local Installation",
+            "install_local.py",
+            "install_local.ps1",
+            "--dry-run",
+            "prompt-to-loop-engineering",
+        ]:
+            self.assertIn(phrase, readme)
+
+    def test_python_installer_copies_skill_and_runs_verify_command(self) -> None:
+        installer = REPO_ROOT / "install_local.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            target_root = Path(tmp) / "skills-home"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(installer),
+                    "--target",
+                    str(target_root),
+                    "--verify",
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"Installer failed.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}",
+            )
+            installed = target_root / "prompt-to-loop-engineering"
+            self.assertTrue((installed / "SKILL.md").is_file())
+            self.assertTrue((installed / "loop_spec.json").is_file())
+            self.assertTrue((installed / "scripts" / "validate_design_result.py").is_file())
+            self.assertFalse((installed / "runtime").exists(), "Installer must not create runtime/")
+            installed_cache = [
+                path.relative_to(installed).as_posix()
+                for path in installed.rglob("*")
+                if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}
+            ]
+            self.assertEqual(installed_cache, [], f"Installer copied generated cache: {installed_cache}")
+
+    def test_python_installer_dry_run_does_not_write_target(self) -> None:
+        installer = REPO_ROOT / "install_local.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            target_root = Path(tmp) / "dry-run-skills"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(installer),
+                    "--target",
+                    str(target_root),
+                    "--dry-run",
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"Dry run failed.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}",
+            )
+            self.assertIn("DRY RUN", result.stdout)
+            self.assertFalse(target_root.exists(), "Dry run must not create target directory")
 
 
 if __name__ == "__main__":
