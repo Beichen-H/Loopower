@@ -36,6 +36,36 @@ Transform one natural-language task request into a deterministic `loop_design_re
 
 This Skill performs design-time analysis and Codex-native configuration scaffolding only. It does not grant permissions, invent runtime capabilities, or claim that the user task passed. When the user asks to run or continue the generated loop, Codex reads the persisted scaffold and acts as the host executor under the active session permissions.
 
+## Defensive Designing Principle
+
+When the user's prompt is structurally vague, underspecified, or operationally broad, Codex MUST enter defensive design mode. Vague input is not permission to improvise recklessly, and it is not permission to refuse construction.
+
+The agent:
+
+- MUST NOT produce a shallow scaffold, placeholder-only LoopSpec, generic agent roles, or unbounded loop.
+- MUST NOT reject solely because the prompt is vague.
+- MUST NOT return `unsupported` solely because the user did not pre-declare an ideal runtime, tool list, file format, or loop topology.
+- MUST derive a reasonable scaffold from observable project evidence before asking for more information.
+- MUST mark every inferred requirement, detected project signal, and defaulted safety value in `assumptions`, `validation_report.assumptions`, or the scaffold's manifest/guardrail rationale.
+- MUST use `needs_input` only when a safety-critical, irreversible, external, credentialed, or policy-bound decision cannot be inferred from the project environment.
+
+## Ambiguous Prompt Fallback Contract
+
+Trigger this contract when the prompt contains a goal but lacks concrete files, formats, acceptance criteria, loop budget, exit signal, or sub-agent split. Examples include: "use this skill to handle this week's data processing", "set up an agent for this project", or "make Codex manage the workflow".
+
+When triggered, Codex MUST inspect available project context using read-only operations first and infer the safest useful scaffold from observable project evidence. Examples of evidence include Python files, `pyproject.toml`, notebooks, CSV or Parquet files, `Tableau` workbooks, SQL files, dashboard exports, test files, README instructions, package manifests, or existing `.codex-loop/` configuration.
+
+Default fallback rules:
+
+1. Default maximum loop iterations: 3. If the user did not declare a loop budget, `loop_spec.json` MUST include a loop budget threshold equivalent to `value=3`, `unit=iterations`, with source `defensive_default`.
+2. Default exit signal: if the user did not declare completion criteria, each active stage MUST terminate only after the current-stage artifact passes a non-empty artifact check and basic schema/static validation.
+3. Default guardrail: `guardrails.json` MUST NOT overwrite an existing same-name workspace file directly. It MUST require either a timestamped destination or a `.tmp/` staging directory before replacing or promoting generated artifacts.
+4. Default sub-agent split: `subagents/` MUST include both `planner.md` and `executor.md`. `planner.md` controls scope, progress, budget, and exit decisions. `executor.md` performs concrete implementation or processing steps under the guardrails. Codex MUST NOT merge these two roles into one prompt.
+5. Default scaffold minimalism: do not add database state, queues, checkpoint stores, or extra worker prompts unless project evidence and declared capabilities justify them.
+6. Default validation: after writing the scaffold, Codex MUST run `scripts/validate_codex_loop_scaffold.py` and must not claim the scaffold is ready if validation fails.
+
+If project evidence is insufficient, still emit a conservative scaffold with explicit assumptions and the defensive defaults above, unless doing so would require forbidden side effects, external credentials, irreversible writes, or unavailable tools.
+
 ## Input contract: `Loop_design_request`
 
 `Loop_design_request` is the published contract name requested by this asset. Its canonical KB serialization root is `loop_design_request`.

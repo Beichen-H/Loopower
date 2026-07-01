@@ -42,6 +42,7 @@ class SkillSurfaceTests(unittest.TestCase):
 
     def test_runtime_free_contract_assets_exist(self) -> None:
         required = [
+            "../../examples/agents-gate/AGENTS.md",
             "schemas/loop_design_request.schema.json",
             "schemas/loop_design_result.schema.json",
             "schemas/loop_spec.schema.json",
@@ -67,6 +68,14 @@ class SkillSurfaceTests(unittest.TestCase):
         ]
         missing = [relative for relative in required if not (SKILL_ROOT / relative).is_file()]
         self.assertEqual(missing, [], f"Missing runtime-free assets: {missing}")
+
+    def test_repository_license_is_mit_for_beichen_hu(self) -> None:
+        license_path = REPO_ROOT / "LICENSE"
+        self.assertTrue(license_path.is_file(), "LICENSE is missing")
+        content = license_path.read_text(encoding="utf-8")
+        self.assertIn("MIT License", content)
+        self.assertIn("Copyright (c) 2026 Beichen Hu", content)
+        self.assertIn("Permission is hereby granted, free of charge", content)
 
     def test_skill_instructions_enforce_validation_gate(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -111,6 +120,25 @@ class SkillSurfaceTests(unittest.TestCase):
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing scaffold contract phrases: {missing}")
 
+    def test_defensive_designing_fallback_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "Defensive Designing Principle",
+            "Ambiguous Prompt Fallback Contract",
+            "MUST NOT produce a shallow scaffold",
+            "MUST NOT reject solely because the prompt is vague",
+            "derive a reasonable scaffold from observable project evidence",
+            "Default maximum loop iterations: 3",
+            "non-empty artifact check and basic schema/static validation",
+            "MUST NOT overwrite an existing same-name workspace file directly",
+            "timestamped destination or a `.tmp/` staging directory",
+            "`planner.md`",
+            "`executor.md`",
+            "MUST NOT merge these two roles",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing defensive design phrases: {missing}")
+
     def test_readmes_describe_public_clone_install_and_codex_usage(self) -> None:
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
@@ -121,8 +149,29 @@ class SkillSurfaceTests(unittest.TestCase):
                 "$prompt-to-loop-engineering",
                 "validate_codex_loop_scaffold.py",
                 ".codex-loop/",
+                "MIT License",
+                "examples/agents-gate/AGENTS.md",
+                "Two-stage Delegation Approval Gate",
             ]:
                 self.assertIn(phrase, content)
+
+    def test_agents_gate_requires_two_stage_delegation_approval(self) -> None:
+        gate_path = REPO_ROOT / "examples" / "agents-gate" / "AGENTS.md"
+        self.assertTrue(gate_path.is_file(), "examples/agents-gate/AGENTS.md is missing")
+        content = gate_path.read_text(encoding="utf-8")
+        required_phrases = [
+            "Two-stage Delegation Approval Gate",
+            "Non-trivial",
+            "Lineup Recommendation",
+            "Loop Boundary",
+            "STOP — Waiting for user approval",
+            "explicit user approval",
+            "$prompt-to-loop-engineering",
+            "MUST NOT initialize `.codex-loop/`",
+            "validate_codex_loop_scaffold.py",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing AGENTS gate phrases: {missing}")
 
     def test_agent_manifest_schema_contract_has_core_scaffold_fields(self) -> None:
         import json

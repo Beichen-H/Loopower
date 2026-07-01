@@ -26,6 +26,9 @@ It is intentionally small. `.codex-loop/` is configuration, not a database, queu
 meta-skills-library/
 ├── README.md
 ├── README-CN.md
+├── LICENSE
+├── examples/
+│   └── agents-gate/AGENTS.md
 ├── install_local.py
 ├── install_local.ps1
 └── skills/
@@ -76,6 +79,29 @@ Replace an existing local install:
 ```bash
 python install_local.py --force --verify
 ```
+
+## Optional AGENTS.md delegation gate
+
+For teams that want Codex to proactively consider Loop Agent scaffolding and sub-agent delegation, copy the optional gate into the target project root:
+
+```bash
+mkdir -p examples
+cp examples/agents-gate/AGENTS.md /path/to/your-project/AGENTS.md
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item .\examples\agents-gate\AGENTS.md C:\path\to\your-project\AGENTS.md
+```
+
+The template at [`examples/agents-gate/AGENTS.md`](examples/agents-gate/AGENTS.md) defines a `Two-stage Delegation Approval Gate`:
+
+1. For Non-trivial work, Codex first presents a `Lineup Recommendation`, `Loop Boundary`, risks, and scaffold decision.
+2. Codex then prints `STOP — Waiting for user approval`.
+3. Only after explicit user approval may Codex initialize or update `.codex-loop/`, generate sub-agent prompts, and run `validate_codex_loop_scaffold.py`.
+
+This gate is advisory and permission-preserving. It does not install a Runtime Engine, does not grant tool permissions, and does not allow Codex to bypass user approval.
 
 ## Use in a Codex project
 
@@ -167,6 +193,10 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
   --request skills/prompt-to-loop-engineering/examples/requests/agent_loop.json
 ```
 
+## License
+
+This repository is released under the [MIT License](LICENSE).
+
 ## Release notes
 
 ### v1.3.0 (2026-06-30)
@@ -178,6 +208,8 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 - Added `scripts/validate_codex_loop_scaffold.py`.
 - Added a complete scaffold example under `examples/codex-loop/`.
 - Added local install scripts for one-command install and verification.
+- Added an optional `Two-stage Delegation Approval Gate` template at `examples/agents-gate/AGENTS.md`.
+- Published the repository under the MIT License.
 
 ### v1.0.0 (2026-06-22)
 
