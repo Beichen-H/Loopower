@@ -2,9 +2,9 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.3.0`: a Codex-native Loop Agent Builder that turns a natural-language task into a validated `loop_design_result` and, when requested, a lightweight `.codex-loop/` Agent Config Scaffold.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.4.0`: a Codex-native Loop Agent Builder and Live Subagent Bridge. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should activate the scaffold through host-native live sub-agent APIs when those APIs are available.
 
-This project does not contain an independent Runtime Engine. Codex is the host executor: it reads persisted project-local configuration, respects guardrails, and continues work under the active user/session permissions.
+This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host, and continues work under the active user/session permissions.
 
 [中文说明](README-CN.md)
 
@@ -16,7 +16,8 @@ This project does not contain an independent Runtime Engine. Codex is the host e
 - an `agent_manifest.json` binding Codex to tools, knowledge sources, sub-agent prompts, and resume rules;
 - a `guardrails.json` file for forbidden commands, write boundaries, approval-required actions, and stop conditions;
 - compact sub-agent prompts such as `planner.md` and `executor.md`;
-- an optional `.status` file that stores only the current stage/node id.
+- an optional `.status` file that stores only the current stage/node id;
+- an activation contract for aligning `.codex-loop/subagents/*.md` with the Codex host's Live Subagents Panel.
 
 It is intentionally small. `.codex-loop/` is configuration, not a database, queue, checkpoint store, or hidden runtime.
 
@@ -24,21 +25,24 @@ It is intentionally small. `.codex-loop/` is configuration, not a database, queu
 
 ```text
 meta-skills-library/
-├── README.md
-├── README-CN.md
-├── LICENSE
-├── examples/
-│   └── agents-gate/AGENTS.md
-├── install_local.py
-├── install_local.ps1
-└── skills/
-    └── prompt-to-loop-engineering/
-        ├── SKILL.md
-        ├── loop_spec.json
-        ├── agents/openai.yaml
-        ├── schemas/
-        ├── examples/
-        └── scripts/
+|-- README.md
+|-- README-CN.md
+|-- LICENSE
+|-- .github/workflows/ci.yml
+|-- examples/
+|   `-- agents-gate/AGENTS.md
+|-- install_local.py
+|-- install_local.ps1
+`-- skills/
+    `-- prompt-to-loop-engineering/
+        |-- SKILL.md
+        |-- loop_spec.json
+        |-- agents/openai.yaml
+        |-- schemas/
+        |-- examples/
+        |-- templates/
+        |   `-- agents-gate/AGENTS.md
+        `-- scripts/
 ```
 
 ## Local Installation
@@ -46,8 +50,8 @@ meta-skills-library/
 Clone the repository:
 
 ```bash
-git clone https://github.com/<your-org>/meta-skills-library.git
-cd meta-skills-library
+git clone https://github.com/Beichen-H/meta-skills.git
+cd meta-skills
 ```
 
 Install the skill into the local Codex skills directory and verify the bundled LoopSpec:
@@ -80,28 +84,61 @@ Replace an existing local install:
 python install_local.py --force --verify
 ```
 
-## Optional AGENTS.md delegation gate
+## Installed-mode compatibility
 
-For teams that want Codex to proactively consider Loop Agent scaffolding and sub-agent delegation, copy the optional gate into the target project root:
+Codex's GitHub skill installer may install only `skills/prompt-to-loop-engineering/` rather than the full repository root. The skill therefore packages operational templates inside the skill directory itself.
+
+After installation, the delegation gate is available at:
+
+```text
+~/.codex/skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md
+```
+
+Copy it into a target project with:
 
 ```bash
-mkdir -p examples
-cp examples/agents-gate/AGENTS.md /path/to/your-project/AGENTS.md
+cp ~/.codex/skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/your-project/AGENTS.md
 ```
 
 On Windows PowerShell:
 
 ```powershell
-Copy-Item .\examples\agents-gate\AGENTS.md C:\path\to\your-project\AGENTS.md
+Copy-Item "$env:USERPROFILE\.codex\skills\prompt-to-loop-engineering\templates\agents-gate\AGENTS.md" C:\path\to\your-project\AGENTS.md
 ```
 
-The template at [`examples/agents-gate/AGENTS.md`](examples/agents-gate/AGENTS.md) defines a `Two-stage Delegation Approval Gate`:
+The repository-root copy at [`examples/agents-gate/AGENTS.md`](examples/agents-gate/AGENTS.md) is kept byte-for-byte aligned with the packaged copy at [`skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md`](skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md).
+
+## Optional AGENTS.md delegation gate
+
+For teams that want Codex to proactively consider Loop Agent scaffolding and sub-agent delegation, copy the optional gate into the target project root:
+
+```bash
+cp skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/your-project/AGENTS.md
+```
+
+The template defines a `Two-stage Delegation Approval Gate`:
 
 1. For Non-trivial work, Codex first presents a `Lineup Recommendation`, `Loop Boundary`, risks, and scaffold decision.
 2. Codex then prints `STOP — Waiting for user approval`.
 3. Only after explicit user approval may Codex initialize or update `.codex-loop/`, generate sub-agent prompts, and run `validate_codex_loop_scaffold.py`.
 
 This gate is advisory and permission-preserving. It does not install a Runtime Engine, does not grant tool permissions, and does not allow Codex to bypass user approval.
+
+## Live Subagent Bridge
+
+Version `1.4.0` adds the `Agent Lifecycle Activation Contract`.
+
+After a user gives explicit `GO`, and after `.codex-loop/` has been written and validated, Codex must not treat the scaffold as passive text only. If the current Codex host exposes `spawn_subagent`, `spawn_agent`, or an equivalent native sub-agent lifecycle API, Codex must activate approved roles from `.codex-loop/subagents/` as live host processes.
+
+Each live role must use the corresponding local prompt file as its authoritative System Prompt baseline:
+
+```text
+.codex-loop/subagents/planner.md  -> planner live process
+.codex-loop/subagents/executor.md -> executor live process
+.codex-loop/subagents/reviewer.md -> optional reviewer live process
+```
+
+If the active Codex host does not expose a native live sub-agent API, Codex must report `lifecycle_activation_blocked`. It must not emulate live sub-agents by creating queues, databases, daemons, or hidden Runtime Engine artifacts.
 
 ## Use in a Codex project
 
@@ -140,13 +177,13 @@ A valid scaffold has this minimal shape:
 
 ```text
 .codex-loop/
-├── loop_spec.json
-├── agent_manifest.json
-├── guardrails.json
-├── subagents/
-│   ├── planner.md
-│   └── executor.md
-└── .status
+|-- loop_spec.json
+|-- agent_manifest.json
+|-- guardrails.json
+|-- subagents/
+|   |-- planner.md
+|   `-- executor.md
+`-- .status
 ```
 
 Optional:
@@ -198,6 +235,14 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v1.4.0 (2026-07-02)
+
+- Added the Codex-native Live Subagent Bridge through the `Agent Lifecycle Activation Contract`.
+- Packaged the `Two-stage Delegation Approval Gate` inside the installed skill at `templates/agents-gate/AGENTS.md`.
+- Preserved a repository-level copy at `examples/agents-gate/AGENTS.md` and added tests to prevent divergence.
+- Added installed-mode compatibility checks so the skill can be verified after path-only Codex installation.
+- Added GitHub Actions CI for unit tests, scaffold validation, DAG validation, and published example validation.
 
 ### v1.3.0 (2026-06-30)
 

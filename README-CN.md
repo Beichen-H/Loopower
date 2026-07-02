@@ -2,9 +2,9 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.3.0`：它是 Codex-native Loop Agent Builder，可以把自然语言任务转成经过验证的 `loop_design_result`，并在需要时生成轻量 `.codex-loop/` Agent Config Scaffold。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.4.0`：它是 Codex-native Loop Agent Builder 与 Live Subagent Bridge。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在宿主支持时把 scaffold 激活为 Live Subagents Panel 中的活动子智能体。
 
-本项目彻底不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目内持久化配置、遵守 guardrails，并在当前用户/会话权限下续跑任务。
+本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，并在当前用户/会话权限下继续工作。
 
 [English README](README.md)
 
@@ -16,29 +16,33 @@
 - `agent_manifest.json`：绑定 Codex、工具、知识源、sub-agent prompts 和续跑规则；
 - `guardrails.json`：禁止命令、写入边界、需要审批的动作和停止条件；
 - 精简 sub-agent prompts，例如 `planner.md` 和 `executor.md`；
-- 可选 `.status` 文件，只记录当前 stage/node id。
+- 可选 `.status` 文件，只记录当前 stage/node id；
+- 用于对齐 `.codex-loop/subagents/*.md` 与 Codex 宿主 Live Subagents Panel 的激活合同。
 
-它刻意保持轻量。`.codex-loop/` 是配置脚手架，不是数据库、队列、checkpoint 存储，也不是隐藏 Runtime。
+它刻意保持轻量。`.codex-loop/` 是配置脚手架，不是数据库、队列、checkpoint 存储，也不是隐藏 runtime。
 
 ## 仓库结构
 
 ```text
 meta-skills-library/
-├── README.md
-├── README-CN.md
-├── LICENSE
-├── examples/
-│   └── agents-gate/AGENTS.md
-├── install_local.py
-├── install_local.ps1
-└── skills/
-    └── prompt-to-loop-engineering/
-        ├── SKILL.md
-        ├── loop_spec.json
-        ├── agents/openai.yaml
-        ├── schemas/
-        ├── examples/
-        └── scripts/
+|-- README.md
+|-- README-CN.md
+|-- LICENSE
+|-- .github/workflows/ci.yml
+|-- examples/
+|   `-- agents-gate/AGENTS.md
+|-- install_local.py
+|-- install_local.ps1
+`-- skills/
+    `-- prompt-to-loop-engineering/
+        |-- SKILL.md
+        |-- loop_spec.json
+        |-- agents/openai.yaml
+        |-- schemas/
+        |-- examples/
+        |-- templates/
+        |   `-- agents-gate/AGENTS.md
+        `-- scripts/
 ```
 
 ## Clone 和本地安装
@@ -46,8 +50,8 @@ meta-skills-library/
 克隆仓库：
 
 ```bash
-git clone https://github.com/<your-org>/meta-skills-library.git
-cd meta-skills-library
+git clone https://github.com/Beichen-H/meta-skills.git
+cd meta-skills
 ```
 
 安装到本地 Codex skills 目录，并验证内置 LoopSpec：
@@ -80,28 +84,61 @@ python install_local.py --dry-run
 python install_local.py --force --verify
 ```
 
-## 可选 AGENTS.md 全局委派门禁
+## installed-mode 兼容性
 
-如果你希望 Codex 在非平凡任务开始前主动判断是否需要 Loop Agent scaffold 和 sub-agent delegation，可以把可选门禁复制到目标项目根目录：
+Codex 的 GitHub skill installer 可能只安装 `skills/prompt-to-loop-engineering/`，而不会复制完整仓库根目录。因此，本项目把运行所需模板也打包进 skill 目录内部。
+
+安装后，委派门禁模板位于：
+
+```text
+~/.codex/skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md
+```
+
+复制到目标项目：
 
 ```bash
-mkdir -p examples
-cp examples/agents-gate/AGENTS.md /path/to/your-project/AGENTS.md
+cp ~/.codex/skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/your-project/AGENTS.md
 ```
 
 Windows PowerShell：
 
 ```powershell
-Copy-Item .\examples\agents-gate\AGENTS.md C:\path\to\your-project\AGENTS.md
+Copy-Item "$env:USERPROFILE\.codex\skills\prompt-to-loop-engineering\templates\agents-gate\AGENTS.md" C:\path\to\your-project\AGENTS.md
 ```
 
-模板 [`examples/agents-gate/AGENTS.md`](examples/agents-gate/AGENTS.md) 定义了 `Two-stage Delegation Approval Gate`：
+仓库根目录的 [`examples/agents-gate/AGENTS.md`](examples/agents-gate/AGENTS.md) 会与打包副本 [`skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md`](skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md) 保持逐字一致。
+
+## 可选 AGENTS.md 全局委派门禁
+
+如果你希望 Codex 在非平凡任务开始前主动判断是否需要 Loop Agent scaffold 和 sub-agent delegation，可以把可选门禁复制到目标项目根目录：
+
+```bash
+cp skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/your-project/AGENTS.md
+```
+
+该模板定义了 `Two-stage Delegation Approval Gate`：
 
 1. 对 Non-trivial 任务，Codex 必须先给出 `Lineup Recommendation`、`Loop Boundary`、风险和 scaffold 决策。
 2. Codex 必须输出 `STOP — Waiting for user approval`。
 3. 只有得到用户显式授权后，Codex 才能初始化或更新 `.codex-loop/`、生成 sub-agent prompts，并运行 `validate_codex_loop_scaffold.py`。
 
 这个门禁只负责审批流程和结构化提醒，不安装 Runtime Engine，不授予额外工具权限，也不允许 Codex 绕过用户批准。
+
+## Live Subagent Bridge
+
+版本 `1.4.0` 增加了 `Agent Lifecycle Activation Contract`。
+
+当用户显式给出 `GO`，并且 `.codex-loop/` 已经写入且验证通过后，Codex 不能只把 scaffold 当作纯文本。如果当前 Codex 宿主暴露 `spawn_subagent`、`spawn_agent` 或等效原生 sub-agent lifecycle API，Codex 必须把 `.codex-loop/subagents/` 下已批准的角色激活为 live host processes。
+
+每个 live role 必须使用对应本地 prompt 文件作为权威 System Prompt 基线：
+
+```text
+.codex-loop/subagents/planner.md  -> planner live process
+.codex-loop/subagents/executor.md -> executor live process
+.codex-loop/subagents/reviewer.md -> optional reviewer live process
+```
+
+如果当前 Codex 宿主没有原生 live sub-agent API，Codex 必须报告 `lifecycle_activation_blocked`。它不得通过创建队列、数据库、daemon 或隐藏 Runtime Engine artifact 来伪造 live sub-agent。
 
 ## 在 Codex 项目中使用
 
@@ -140,13 +177,13 @@ python skills/prompt-to-loop-engineering/scripts/validate_codex_loop_scaffold.py
 
 ```text
 .codex-loop/
-├── loop_spec.json
-├── agent_manifest.json
-├── guardrails.json
-├── subagents/
-│   ├── planner.md
-│   └── executor.md
-└── .status
+|-- loop_spec.json
+|-- agent_manifest.json
+|-- guardrails.json
+|-- subagents/
+|   |-- planner.md
+|   `-- executor.md
+`-- .status
 ```
 
 可选：
@@ -198,6 +235,14 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v1.4.0 (2026-07-02)
+
+- 通过 `Agent Lifecycle Activation Contract` 增加 Codex-native Live Subagent Bridge。
+- 将 `Two-stage Delegation Approval Gate` 打包进已安装 skill 内部：`templates/agents-gate/AGENTS.md`。
+- 保留仓库根目录副本 `examples/agents-gate/AGENTS.md`，并增加测试防止两份模板漂移。
+- 增加 installed-mode 兼容性检查，使 path-only Codex 安装后的 skill 也能被验证。
+- 增加 GitHub Actions CI，覆盖单元测试、scaffold 验证、DAG 验证和已发布示例验证。
 
 ### v1.3.0 (2026-06-30)
 

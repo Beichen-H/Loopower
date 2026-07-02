@@ -15,6 +15,10 @@ REPO_ROOT = SKILL_ROOT.parents[1]
 
 
 class SkillSurfaceTests(unittest.TestCase):
+    def require_full_repository(self) -> None:
+        if not (REPO_ROOT / "README.md").is_file():
+            self.skipTest("repository-root assets are not present in installed-skill mode")
+
     def test_skill_frontmatter_matches_folder(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         match = re.match(r"^---\n(?P<body>.*?)\n---", content, re.DOTALL)
@@ -42,7 +46,7 @@ class SkillSurfaceTests(unittest.TestCase):
 
     def test_runtime_free_contract_assets_exist(self) -> None:
         required = [
-            "../../examples/agents-gate/AGENTS.md",
+            "templates/agents-gate/AGENTS.md",
             "schemas/loop_design_request.schema.json",
             "schemas/loop_design_result.schema.json",
             "schemas/loop_spec.schema.json",
@@ -66,10 +70,13 @@ class SkillSurfaceTests(unittest.TestCase):
             "examples/codex-loop/subagents/planner.md",
             "examples/codex-loop/subagents/executor.md",
         ]
+        if (REPO_ROOT / "README.md").is_file():
+            required.append("../../examples/agents-gate/AGENTS.md")
         missing = [relative for relative in required if not (SKILL_ROOT / relative).is_file()]
         self.assertEqual(missing, [], f"Missing runtime-free assets: {missing}")
 
     def test_repository_license_is_mit_for_beichen_hu(self) -> None:
+        self.require_full_repository()
         license_path = REPO_ROOT / "LICENSE"
         self.assertTrue(license_path.is_file(), "LICENSE is missing")
         content = license_path.read_text(encoding="utf-8")
@@ -89,14 +96,15 @@ class SkillSurfaceTests(unittest.TestCase):
         self.assertEqual(missing, [], f"Missing mandatory instructions: {missing}")
 
     def test_release_version_is_consistent(self) -> None:
+        self.require_full_repository()
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `1.3.0`", skill)
-        self.assertIn("### v1.3.0 (2026-06-30)", readme)
-        self.assertIn("### v1.3.0 (2026-06-30)", readme_cn)
+        self.assertIn("**Skill version:** `1.4.0`", skill)
+        self.assertIn("### v1.4.0 (2026-07-02)", readme)
+        self.assertIn("### v1.4.0 (2026-07-02)", readme_cn)
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -120,6 +128,24 @@ class SkillSurfaceTests(unittest.TestCase):
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing scaffold contract phrases: {missing}")
 
+    def test_agent_lifecycle_activation_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "Agent Lifecycle Activation Contract",
+            "Host Instantiation Command",
+            "Live Subagents Panel",
+            "MUST NOT treat the scaffold as passive text only",
+            "host-native `spawn_subagent`",
+            "equivalent native sub-agent creation API",
+            "Context Alignment",
+            "sole authoritative System Prompt baseline",
+            "Status Binding",
+            "MUST update `.codex-loop/.status`",
+            "No independent Runtime Engine is introduced",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing lifecycle activation phrases: {missing}")
+
     def test_defensive_designing_fallback_contract_is_documented(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_phrases = [
@@ -140,6 +166,7 @@ class SkillSurfaceTests(unittest.TestCase):
         self.assertEqual(missing, [], f"Missing defensive design phrases: {missing}")
 
     def test_readmes_describe_public_clone_install_and_codex_usage(self) -> None:
+        self.require_full_repository()
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
         for content in (readme, readme_cn):
@@ -151,14 +178,20 @@ class SkillSurfaceTests(unittest.TestCase):
                 ".codex-loop/",
                 "MIT License",
                 "examples/agents-gate/AGENTS.md",
+                "templates/agents-gate/AGENTS.md",
                 "Two-stage Delegation Approval Gate",
+                "Live Subagent Bridge",
+                "installed-mode",
             ]:
                 self.assertIn(phrase, content)
 
     def test_agents_gate_requires_two_stage_delegation_approval(self) -> None:
-        gate_path = REPO_ROOT / "examples" / "agents-gate" / "AGENTS.md"
-        self.assertTrue(gate_path.is_file(), "examples/agents-gate/AGENTS.md is missing")
-        content = gate_path.read_text(encoding="utf-8")
+        gate_paths = [SKILL_ROOT / "templates" / "agents-gate" / "AGENTS.md"]
+        if (REPO_ROOT / "examples" / "agents-gate" / "AGENTS.md").is_file():
+            gate_paths.append(REPO_ROOT / "examples" / "agents-gate" / "AGENTS.md")
+        for gate_path in gate_paths:
+            self.assertTrue(gate_path.is_file(), f"{gate_path} is missing")
+        contents = [path.read_text(encoding="utf-8") for path in gate_paths]
         required_phrases = [
             "Two-stage Delegation Approval Gate",
             "Non-trivial",
@@ -170,8 +203,11 @@ class SkillSurfaceTests(unittest.TestCase):
             "MUST NOT initialize `.codex-loop/`",
             "validate_codex_loop_scaffold.py",
         ]
-        missing = [phrase for phrase in required_phrases if phrase not in content]
-        self.assertEqual(missing, [], f"Missing AGENTS gate phrases: {missing}")
+        for content in contents:
+            missing = [phrase for phrase in required_phrases if phrase not in content]
+            self.assertEqual(missing, [], f"Missing AGENTS gate phrases: {missing}")
+        if len(contents) == 2:
+            self.assertEqual(contents[0], contents[1], "repo and packaged gate templates diverged")
 
     def test_agent_manifest_schema_contract_has_core_scaffold_fields(self) -> None:
         import json
@@ -201,11 +237,13 @@ class SkillSurfaceTests(unittest.TestCase):
         )
 
     def test_generated_python_cache_is_not_packaged(self) -> None:
+        self.require_full_repository()
         installer = (REPO_ROOT / "install_local.py").read_text(encoding="utf-8")
         for token in ['"__pycache__"', '".pyc"', '".pyo"']:
             self.assertIn(token, installer)
 
     def test_local_install_scripts_are_packaged_and_documented(self) -> None:
+        self.require_full_repository()
         required = ["install_local.py", "install_local.ps1"]
         missing = [relative for relative in required if not (REPO_ROOT / relative).is_file()]
         self.assertEqual(missing, [], f"Missing local install scripts: {missing}")
@@ -220,7 +258,21 @@ class SkillSurfaceTests(unittest.TestCase):
         ]:
             self.assertIn(phrase, readme)
 
+    def test_github_actions_ci_is_packaged(self) -> None:
+        self.require_full_repository()
+        workflow = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+        self.assertTrue(workflow.is_file(), ".github/workflows/ci.yml is missing")
+        content = workflow.read_text(encoding="utf-8")
+        for phrase in [
+            "python -B -m unittest discover",
+            "validate_codex_loop_scaffold.py",
+            "test_spec_loading.py",
+            "validate_design_result.py",
+        ]:
+            self.assertIn(phrase, content)
+
     def test_python_installer_copies_skill_and_runs_verify_command(self) -> None:
+        self.require_full_repository()
         installer = REPO_ROOT / "install_local.py"
         with tempfile.TemporaryDirectory() as tmp:
             target_root = Path(tmp) / "skills-home"
@@ -247,6 +299,7 @@ class SkillSurfaceTests(unittest.TestCase):
             self.assertTrue((installed / "SKILL.md").is_file())
             self.assertTrue((installed / "loop_spec.json").is_file())
             self.assertTrue((installed / "scripts" / "validate_design_result.py").is_file())
+            self.assertTrue((installed / "templates" / "agents-gate" / "AGENTS.md").is_file())
             self.assertFalse((installed / "runtime").exists(), "Installer must not create runtime/")
             installed_cache = [
                 path.relative_to(installed).as_posix()
@@ -256,6 +309,7 @@ class SkillSurfaceTests(unittest.TestCase):
             self.assertEqual(installed_cache, [], f"Installer copied generated cache: {installed_cache}")
 
     def test_python_installer_dry_run_does_not_write_target(self) -> None:
+        self.require_full_repository()
         installer = REPO_ROOT / "install_local.py"
         with tempfile.TemporaryDirectory() as tmp:
             target_root = Path(tmp) / "dry-run-skills"

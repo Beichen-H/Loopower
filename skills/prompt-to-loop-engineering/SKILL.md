@@ -5,7 +5,7 @@ description: Use when a natural-language task must be converted into a role-neut
 
 # Prompt to Loop Engineering
 
-**Skill version:** `1.3.0`
+**Skill version:** `1.4.0`
 **Normative contract:** Loop Engineering KB `v4.0.2`
 **Self-design graph:** [`loop_spec.json`](loop_spec.json)
 
@@ -174,6 +174,58 @@ Scaffold rules:
 - `.status` is optional and must contain only one current stage or node id. Do not create `state.json`, a database, queue, checkpoint store, or hidden Runtime Engine inside the Skill or scaffold.
 
 Codex is the host executor: on continuation, it MUST read `.codex-loop/agent_manifest.json`, `.codex-loop/loop_spec.json`, `.codex-loop/guardrails.json`, the relevant sub-agent prompt, and `.status` if present before taking action. Sub-agent use is allowed only when the manifest and `Loop_design_request.runtime_capabilities.subagents=true` permit it.
+
+### Agent Lifecycle Activation Contract
+
+This contract governs Layer 3, where Codex acts as the execution host for an already generated and validated Agent Config Scaffold. It does not change the design-time output contract and does not add a Runtime Engine.
+
+Activation preconditions:
+
+1. The user has given explicit GO authorization after any required delegation approval gate.
+2. `.codex-loop/` has been written or updated successfully.
+3. `scripts/validate_codex_loop_scaffold.py .codex-loop` has passed.
+4. `.codex-loop/agent_manifest.json` permits the requested sub-agent roles.
+5. The current Codex host exposes native sub-agent lifecycle capability for the active session.
+
+#### Host Instantiation Command
+
+After the activation preconditions hold, Codex MUST NOT treat the scaffold as passive text only. Codex MUST instantiate the approved roles from `.codex-loop/subagents/` as live host processes in the Live Subagents Panel by calling the host-native `spawn_subagent`, `spawn_agent`, or equivalent native sub-agent creation API.
+
+For each activated role, Codex MUST:
+
+- instantiate only roles declared in `.codex-loop/agent_manifest.json`;
+- use the manifest role id as the stable lifecycle identity when the host API permits naming;
+- bind the role to the corresponding `.codex-loop/subagents/<role>.md` file;
+- pass only the current approved loop stage, relevant guardrails, task slice, and required evidence contract as activation context;
+- keep the main Codex host responsible for orchestration, permission checks, approvals, and final reporting.
+
+If the active Codex host does not expose `spawn_subagent` or an equivalent native sub-agent creation API, Codex MUST report `lifecycle_activation_blocked` and the missing host capability. Codex MUST NOT emulate live sub-agents by creating extra files, queues, databases, local daemons, or hidden controller loops. No independent Runtime Engine is introduced.
+
+#### Context Alignment
+
+When Codex activates a Live Subagents Panel role, the corresponding local `.md` file is the sole authoritative System Prompt baseline for that live role, subject only to higher-priority host, developer, safety, and tool-use instructions.
+
+Codex MUST:
+
+- read the complete `.codex-loop/subagents/<role>.md` file immediately before activation;
+- provide that file content as the role's system-prompt baseline, or as the closest host-supported equivalent when the API does not expose a literal system-prompt field;
+- preserve the file's role boundaries, guardrails, allowed outputs, and stop conditions without summarizing them away;
+- treat any extra task context as data-plane context, never as a replacement for the local role prompt;
+- refuse activation when the manifest role binding and the local prompt file disagree.
+
+The live role in the host UI and the versioned prompt file in the Git worktree must therefore remain behaviorally aligned: the UI process is the in-memory activation of the local script, not an independently invented persona.
+
+#### Status Binding
+
+The main Codex host owns synchronization between the dynamic lifecycle and the static scaffold. Whenever an activated sub-agent completes a stage, reports a blocking condition, triggers a guardrail, or hands control back to the host, Codex MUST update `.codex-loop/.status` with the current canonical stage or node id before continuing.
+
+Status binding rules:
+
+- `.status` remains a lightweight single-value stage marker, not a state database.
+- The value written to `.status` MUST reference a valid node or stage declared in `.codex-loop/loop_spec.json`.
+- The host MUST update `.status` only after reconciling sub-agent output with guardrails, acceptance evidence, and loop transition rules.
+- Guardrail stops, user-approval waits, validation failures, and lifecycle activation blocks MUST be reflected in `.status` before the host reports the pause.
+- Sub-agents MUST NOT write `.status` directly unless the host explicitly delegates that single write action and then verifies the result.
 
 Machine-readable manifest contract: [`schemas/agent_manifest.schema.json`](schemas/agent_manifest.schema.json).
 
