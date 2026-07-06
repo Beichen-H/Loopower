@@ -2,7 +2,7 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.5.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge 与 Cooperative Governance Overlay。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期和宿主原生 live sub-agent 激活。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.6.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge、Cooperative Governance Overlay 与 Model Configuration Inheritance Contract。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期、宿主原生 live sub-agent 激活和子智能体推理强度对齐。
 
 本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
 
@@ -18,7 +18,8 @@
 - 精简 sub-agent prompts，例如 `planner.md` 和 `executor.md`；
 - 可选 `.status` 文件，只记录当前 stage/node id；
 - 用于对齐 `.codex-loop/subagents/*.md` 与 Codex 宿主 Live Subagents Panel 的激活合同；
-- non-exclusive 治理覆盖层，让 specialized skills 继续作为 host-resolved atomic capabilities 被使用。
+- non-exclusive 治理覆盖层，让 specialized skills 继续作为 host-resolved atomic capabilities 被使用；
+- `required_subagent_reasoning_intensity` 标记，用于记录复杂 live sub-agent 工作所需的 `extended_thought` 推理强度。
 
 它刻意保持轻量。`.codex-loop/` 是配置脚手架，不是数据库、队列、checkpoint 存储，也不是隐藏 runtime。
 
@@ -141,6 +142,35 @@ cp skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/yo
 
 如果当前 Codex 宿主没有原生 live sub-agent API，Codex 必须报告 `lifecycle_activation_blocked`。它不得通过创建队列、数据库、daemon 或隐藏 Runtime Engine artifact 来伪造 live sub-agent。
 
+## Model Configuration Inheritance Contract
+
+版本 `1.6.0` 增加 `Model Configuration Inheritance Contract`。
+
+当 Codex 通过 `spawn_subagent`、`spawn_agent`、`multi_agent_v1.spawn_agent` 或等效原生 API 激活 live sub-agents 时，如果宿主暴露 model 或 reasoning 配置参数，就必须显式请求继承父会话的推理配置。
+
+推荐宿主声明：
+
+```text
+reasoning_intensity: "extended_thought"
+model_config: inherit_parent
+```
+
+如果当前宿主 API 无法直接传递模型配置参数，生成的 sub-agent prompts 必须包含兜底指令，要求子线程在开始实质性工作前请求对齐父会话的 5.5 ultra-high reasoning profile。若无法确认对齐，子线程必须报告 `model_configuration_degraded`。
+
+任何依赖 live sub-agents 的 `agent_loop` scaffold，都必须在 `loop_spec.json` 中记录该要求：
+
+```json
+{
+  "runtime_binding": {
+    "capabilities_snapshot": {
+      "required_subagent_reasoning_intensity": "extended_thought"
+    }
+  }
+}
+```
+
+当设计需要 sub-agents 时，同样的值也必须出现在 `runtime_binding.required_capabilities.required_subagent_reasoning_intensity`。验证器可以拒绝缺失或弱化的值。
+
 ## Cooperative Governance Overlay
 
 版本 `1.5.0` 明确本 skill 是 non-exclusive 的治理层。它不替代系统级 skills、superpowers-style skills、browser tools、research tools、code-generation skills、debugging skills 或 document/data skills。
@@ -252,6 +282,14 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v1.6.0 (2026-07-06)
+
+- 增加 `Model Configuration Inheritance Contract`。
+- 要求宿主原生 sub-agent 激活在可用时显式请求 `reasoning_intensity: "extended_thought"` 或 `model_config: inherit_parent`。
+- 为无法直接传递模型配置参数的宿主增加 sub-agent prompt 兜底要求。
+- 在 scaffold capability snapshot 与 required capabilities 中增加 `required_subagent_reasoning_intensity: "extended_thought"`。
+- 加强 scaffold 验证：依赖 sub-agent 的 scaffold 若缺少推理强度标记，将被拒绝。
 
 ### v1.5.0 (2026-07-05)
 

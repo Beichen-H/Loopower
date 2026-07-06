@@ -20,13 +20,15 @@
       "sandbox": true,
       "human_interrupt": true,
       "parallel_execution": false,
-      "subagents": true
+      "subagents": true,
+      "required_subagent_reasoning_intensity": "extended_thought"
     },
     "required_capabilities": {
       "available_tools": ["read_files", "edit_files", "run_tests"],
       "sandbox": true,
       "human_interrupt": true,
-      "subagents": true
+      "subagents": true,
+      "required_subagent_reasoning_intensity": "extended_thought"
     },
     "capability_mismatches": []
   },

@@ -144,6 +144,31 @@ def validate_guardrails(guardrails: dict[str, Any]) -> None:
     require(len(guardrails["stop_conditions"]) > 0, "guardrails.stop_conditions must not be empty")
 
 
+def validate_loop_spec(loop_spec: dict[str, Any]) -> None:
+    require(isinstance(loop_spec.get("control_flow"), dict), "loop_spec.control_flow must be present")
+    runtime_binding = loop_spec.get("runtime_binding")
+    require(isinstance(runtime_binding, dict), "loop_spec.runtime_binding must be present")
+    capabilities_snapshot = runtime_binding.get("capabilities_snapshot")
+    required_capabilities = runtime_binding.get("required_capabilities")
+    require(
+        isinstance(capabilities_snapshot, dict),
+        "loop_spec.runtime_binding.capabilities_snapshot must be an object",
+    )
+    require(
+        isinstance(required_capabilities, dict),
+        "loop_spec.runtime_binding.required_capabilities must be an object",
+    )
+    if capabilities_snapshot.get("subagents") is True:
+        require(
+            capabilities_snapshot.get("required_subagent_reasoning_intensity") == "extended_thought",
+            "capabilities_snapshot.required_subagent_reasoning_intensity must be extended_thought when subagents=true",
+        )
+        require(
+            required_capabilities.get("required_subagent_reasoning_intensity") == "extended_thought",
+            "required_capabilities.required_subagent_reasoning_intensity must be extended_thought when subagents are required",
+        )
+
+
 def validate_scaffold(root: Path) -> None:
     root = root.resolve()
     require(root.is_dir(), f"scaffold directory not found: {root}")
@@ -153,7 +178,7 @@ def validate_scaffold(root: Path) -> None:
     loop_spec = load_json(root / "loop_spec.json")
     manifest = load_json(root / "agent_manifest.json")
     guardrails = load_json(root / "guardrails.json")
-    require(isinstance(loop_spec.get("control_flow"), dict), "loop_spec.control_flow must be present")
+    validate_loop_spec(loop_spec)
     validate_manifest(root, manifest)
     validate_guardrails(guardrails)
     validate_status(root)

@@ -5,7 +5,7 @@ description: Use when a natural-language task must be converted into a role-neut
 
 # Prompt to Loop Engineering
 
-**Skill version:** `1.5.0`
+**Skill version:** `1.6.0`
 **Normative contract:** Loop Engineering KB `v4.0.2`
 **Self-design graph:** [`loop_spec.json`](loop_spec.json)
 
@@ -99,6 +99,56 @@ Sub-agents may receive prompts that recommend specialized skills, plugins, conne
 
 A sub-agent prompt MUST NOT assume asynchronous access to another skill, background execution, parallelism, network access, durable state, approval bypass, or tool permissions unless those capabilities are present in the observed host capability snapshot and permitted by policy.
 
+## Model Configuration Inheritance Contract
+
+This contract prevents live sub-agent degradation caused by host defaults that instantiate child threads at a lower model or reasoning setting than the parent Codex session.
+
+### Enforce Intensity Realignment
+
+When Codex calls a host-native API such as `spawn_subagent`, `spawn_agent`, `multi_agent_v1.spawn_agent`, or an equivalent native sub-agent creation API, Codex MUST explicitly request parent-level model and reasoning inheritance whenever the API exposes a supported parameter.
+
+Preferred declarations include:
+
+- `reasoning_intensity: "extended_thought"`
+- `model_config: inherit_parent`
+- an equivalent host-supported setting that inherits the parent model and reasoning profile.
+
+For complex quantitative, multi-file, research, optimization, planning, or long-horizon loop tasks, the requested sub-agent reasoning level is `extended_thought`, corresponding to the current 5.5 ultra-high reasoning profile when that profile is available in the host.
+
+Codex MUST NOT silently instantiate a live sub-agent at a known lower reasoning preset when the parent session is operating at a higher reasoning configuration. If the host API accepts configuration overrides but rejects or ignores the inheritance request, Codex MUST treat lifecycle activation as degraded and report the exact mismatch before relying on that sub-agent for high-stakes reasoning.
+
+### Model Configuration Fallback Prompt
+
+If the active host API does not expose a direct model, reasoning, or inheritance parameter, Codex MUST inject a model-configuration fallback instruction into each generated or activated sub-agent prompt.
+
+The fallback instruction MUST require the sub-agent, at startup, to ask the host to align the current child window with the parent session's highest available reasoning configuration before beginning substantive work. The instruction must name the intended profile as `extended_thought` / 5.5 ultra-high and must require the sub-agent to report whether alignment was confirmed, unavailable, or blocked.
+
+Fallback prompt text SHOULD follow this form:
+
+```text
+Before substantive reasoning, request host alignment to the parent session model configuration:
+reasoning_intensity = extended_thought, equivalent to the parent 5.5 ultra-high reasoning profile when available.
+If the host cannot align this child thread, report model_configuration_degraded before proceeding.
+```
+
+If neither API-level inheritance nor prompt-level escalation can be confirmed, the host may still use the sub-agent for bounded low-risk work, but MUST treat lifecycle activation as degraded for complex reasoning nodes and keep final synthesis, verification, and acceptance decisions in the parent session.
+
+### Scaffold Logging
+
+Every generated `agent_loop` scaffold that declares `runtime_binding.capabilities_snapshot.subagents=true` MUST record the required child reasoning level in the LoopSpec:
+
+```json
+{
+  "runtime_binding": {
+    "capabilities_snapshot": {
+      "required_subagent_reasoning_intensity": "extended_thought"
+    }
+  }
+}
+```
+
+The same value MUST appear in `runtime_binding.required_capabilities.required_subagent_reasoning_intensity` when sub-agents are required for the design. This marker is static evidence for validators and reviewers. Missing or weaker values are invalid for scaffolds that rely on live sub-agent reasoning.
+
 ## Defensive Designing Principle
 
 When the user's prompt is structurally vague, underspecified, or operationally broad, Codex MUST enter defensive design mode. Vague input is not permission to improvise recklessly, and it is not permission to refuse construction.
@@ -146,6 +196,7 @@ Loop_design_request:
     human_interrupt: boolean
     parallel_execution: boolean
     subagents: boolean
+    required_subagent_reasoning_intensity: extended_thought | null
   policy_constraints:
     allowed_side_effects: []
     forbidden_actions: []
@@ -333,6 +384,7 @@ Copy the normalized `Loop_design_request.runtime_capabilities` exactly into `loo
 - `human_approval` or approval nodes require `human_interrupt=true`.
 - Parallel topology requires `parallel_execution=true`.
 - Worker nodes, delegation, or `orchestrator_workers` require `subagents=true`.
+- Worker nodes, delegation, or live sub-agent activation for complex reasoning require `required_subagent_reasoning_intensity="extended_thought"` in the capability snapshot and required capabilities.
 - A sandbox claim requires `sandbox=true`.
 
 When a necessary capability is absent, return `unsupported`; do not weaken the requested invariant and do not emulate runtime state in model context.

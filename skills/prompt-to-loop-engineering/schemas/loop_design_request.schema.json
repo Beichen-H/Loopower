@@ -41,7 +41,13 @@
         "sandbox": { "type": "boolean", "default": false },
         "human_interrupt": { "type": "boolean", "default": false },
         "parallel_execution": { "type": "boolean", "default": false },
-        "subagents": { "type": "boolean", "default": false }
+        "subagents": { "type": "boolean", "default": false },
+        "required_subagent_reasoning_intensity": {
+          "type": ["string", "null"],
+          "enum": ["extended_thought", null],
+          "default": null,
+          "description": "Required child-agent reasoning profile for host-native subagent activation. Use extended_thought when subagents are relied on for complex reasoning."
+        }
       },
       "additionalProperties": false
     },

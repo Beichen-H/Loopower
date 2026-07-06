@@ -2,7 +2,7 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.5.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, and Cooperative Governance Overlay. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, and host-native live sub-agent activation without taking exclusive control of the session.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.6.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, Cooperative Governance Overlay, and Model Configuration Inheritance Contract. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, host-native live sub-agent activation, and sub-agent reasoning intensity alignment without taking exclusive control of the session.
 
 This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
 
@@ -18,7 +18,8 @@ This project does not contain an independent Runtime Engine. Codex is the host e
 - compact sub-agent prompts such as `planner.md` and `executor.md`;
 - an optional `.status` file that stores only the current stage/node id;
 - an activation contract for aligning `.codex-loop/subagents/*.md` with the Codex host's Live Subagents Panel;
-- a non-exclusive governance overlay that keeps specialized skills available as host-resolved atomic capabilities.
+- a non-exclusive governance overlay that keeps specialized skills available as host-resolved atomic capabilities;
+- a `required_subagent_reasoning_intensity` marker that records `extended_thought` requirements for complex live sub-agent work.
 
 It is intentionally small. `.codex-loop/` is configuration, not a database, queue, checkpoint store, or hidden runtime.
 
@@ -141,6 +142,35 @@ Each live role must use the corresponding local prompt file as its authoritative
 
 If the active Codex host does not expose a native live sub-agent API, Codex must report `lifecycle_activation_blocked`. It must not emulate live sub-agents by creating queues, databases, daemons, or hidden Runtime Engine artifacts.
 
+## Model Configuration Inheritance Contract
+
+Version `1.6.0` adds the `Model Configuration Inheritance Contract`.
+
+When Codex activates live sub-agents through `spawn_subagent`, `spawn_agent`, `multi_agent_v1.spawn_agent`, or an equivalent native API, it must explicitly request parent-level reasoning inheritance whenever the host exposes a model or reasoning configuration parameter.
+
+Preferred host declarations include:
+
+```text
+reasoning_intensity: "extended_thought"
+model_config: inherit_parent
+```
+
+If the active host API cannot pass a model configuration parameter, generated sub-agent prompts must include a fallback instruction requiring the child thread to request alignment with the parent 5.5 ultra-high reasoning profile before substantive work. If alignment cannot be confirmed, the child must report `model_configuration_degraded`.
+
+Every generated `agent_loop` scaffold that relies on live sub-agents must log the requirement in `loop_spec.json`:
+
+```json
+{
+  "runtime_binding": {
+    "capabilities_snapshot": {
+      "required_subagent_reasoning_intensity": "extended_thought"
+    }
+  }
+}
+```
+
+The same value must appear in `runtime_binding.required_capabilities.required_subagent_reasoning_intensity` when sub-agents are required for the design. Validators may reject weaker or missing values.
+
 ## Cooperative Governance Overlay
 
 Version `1.5.0` makes the skill explicitly non-exclusive. It does not replace system-level skills, superpowers-style skills, browser tools, research tools, code-generation skills, debugging skills, or document/data skills.
@@ -252,6 +282,14 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v1.6.0 (2026-07-06)
+
+- Added the `Model Configuration Inheritance Contract`.
+- Required host-native sub-agent activation to request `reasoning_intensity: "extended_thought"` or `model_config: inherit_parent` when those parameters are available.
+- Added fallback prompt requirements for hosts that cannot pass model configuration parameters directly.
+- Added `required_subagent_reasoning_intensity: "extended_thought"` to scaffold capability snapshots and required capabilities.
+- Strengthened scaffold validation to reject sub-agent scaffolds that omit the required reasoning intensity marker.
 
 ### v1.5.0 (2026-07-05)
 

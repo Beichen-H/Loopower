@@ -66,6 +66,27 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing subagent prompt", result.stdout + result.stderr)
 
+    def test_rejects_subagent_scaffold_without_reasoning_intensity_marker(self) -> None:
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / ".codex-loop"
+            shutil.copytree(EXAMPLE, work)
+            spec_path = work / "loop_spec.json"
+            spec = json.loads(spec_path.read_text(encoding="utf-8"))
+            spec["runtime_binding"]["capabilities_snapshot"].pop(
+                "required_subagent_reasoning_intensity", None
+            )
+            spec_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+
+            result = self.run_validator(work)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "required_subagent_reasoning_intensity",
+                result.stdout + result.stderr,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

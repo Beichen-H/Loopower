@@ -1,7 +1,7 @@
 interface:
   display_name: "Prompt to Loop Engineering"
   short_description: "Govern validated Codex loop-agent scaffolds"
-  default_prompt: "Use $prompt-to-loop-engineering to build and statically validate a KB v4.0.2 loop_design_result and, when requested, a lightweight .codex-loop scaffold as a non-exclusive governance overlay without installing a Runtime Engine."
+  default_prompt: "Use $prompt-to-loop-engineering to build and statically validate a KB v4.0.2 loop_design_result and, when requested, a lightweight .codex-loop scaffold as a non-exclusive governance overlay with inherited subagent reasoning intensity and no Runtime Engine."
 
 policy:
   allow_implicit_invocation: true

@@ -102,9 +102,9 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `1.5.0`", skill)
-        self.assertIn("### v1.5.0 (2026-07-05)", readme)
-        self.assertIn("### v1.5.0 (2026-07-05)", readme_cn)
+        self.assertIn("**Skill version:** `1.6.0`", skill)
+        self.assertIn("### v1.6.0 (2026-07-06)", readme)
+        self.assertIn("### v1.6.0 (2026-07-06)", readme_cn)
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -171,6 +171,24 @@ class SkillSurfaceTests(unittest.TestCase):
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing cooperative overlay phrases: {missing}")
 
+    def test_model_configuration_inheritance_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "Model Configuration Inheritance Contract",
+            "Enforce Intensity Realignment",
+            "`reasoning_intensity: \"extended_thought\"`",
+            "`model_config: inherit_parent`",
+            "required_subagent_reasoning_intensity",
+            "`extended_thought`",
+            "5.5 ultra-high",
+            "Model Configuration Fallback Prompt",
+            "Scaffold Logging",
+            "capability_snapshot",
+            "MUST treat lifecycle activation as degraded",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing model inheritance phrases: {missing}")
+
     def test_defensive_designing_fallback_contract_is_documented(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_phrases = [
@@ -210,8 +228,50 @@ class SkillSurfaceTests(unittest.TestCase):
                 "Cooperative Governance Overlay",
                 "non-exclusive",
                 "host-resolved atomic capabilities",
+                "Model Configuration Inheritance Contract",
+                "required_subagent_reasoning_intensity",
+                "extended_thought",
             ]:
                 self.assertIn(phrase, content)
+
+    def test_loop_spec_schema_and_example_log_subagent_reasoning_intensity(self) -> None:
+        import json
+
+        request_schema = json.loads(
+            (SKILL_ROOT / "schemas" / "loop_design_request.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime_props = request_schema["properties"]["runtime_capabilities"]["properties"]
+        self.assertIn("required_subagent_reasoning_intensity", runtime_props)
+        self.assertIn("extended_thought", runtime_props["required_subagent_reasoning_intensity"]["enum"])
+
+        loop_spec = json.loads(
+            (SKILL_ROOT / "examples" / "codex-loop" / "loop_spec.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        snapshot = loop_spec["runtime_binding"]["capabilities_snapshot"]
+        required = loop_spec["runtime_binding"]["required_capabilities"]
+        self.assertEqual(
+            snapshot.get("required_subagent_reasoning_intensity"), "extended_thought"
+        )
+        self.assertEqual(
+            required.get("required_subagent_reasoning_intensity"), "extended_thought"
+        )
+
+    def test_example_subagent_prompts_request_reasoning_alignment(self) -> None:
+        for relative in [
+            "examples/codex-loop/subagents/planner.md",
+            "examples/codex-loop/subagents/executor.md",
+        ]:
+            content = (SKILL_ROOT / relative).read_text(encoding="utf-8")
+            for phrase in [
+                "reasoning_intensity = extended_thought",
+                "5.5 ultra-high",
+                "model_configuration_degraded",
+            ]:
+                self.assertIn(phrase, content, f"{relative} missing {phrase}")
 
     def test_agents_gate_requires_two_stage_delegation_approval(self) -> None:
         gate_paths = [SKILL_ROOT / "templates" / "agents-gate" / "AGENTS.md"]
