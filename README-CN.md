@@ -2,9 +2,9 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.4.0`：它是 Codex-native Loop Agent Builder 与 Live Subagent Bridge。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在宿主支持时把 scaffold 激活为 Live Subagents Panel 中的活动子智能体。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.5.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge 与 Cooperative Governance Overlay。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期和宿主原生 live sub-agent 激活。
 
-本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，并在当前用户/会话权限下继续工作。
+本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
 
 [English README](README.md)
 
@@ -17,7 +17,8 @@
 - `guardrails.json`：禁止命令、写入边界、需要审批的动作和停止条件；
 - 精简 sub-agent prompts，例如 `planner.md` 和 `executor.md`；
 - 可选 `.status` 文件，只记录当前 stage/node id；
-- 用于对齐 `.codex-loop/subagents/*.md` 与 Codex 宿主 Live Subagents Panel 的激活合同。
+- 用于对齐 `.codex-loop/subagents/*.md` 与 Codex 宿主 Live Subagents Panel 的激活合同；
+- non-exclusive 治理覆盖层，让 specialized skills 继续作为 host-resolved atomic capabilities 被使用。
 
 它刻意保持轻量。`.codex-loop/` 是配置脚手架，不是数据库、队列、checkpoint 存储，也不是隐藏 runtime。
 
@@ -140,6 +141,22 @@ cp skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/yo
 
 如果当前 Codex 宿主没有原生 live sub-agent API，Codex 必须报告 `lifecycle_activation_blocked`。它不得通过创建队列、数据库、daemon 或隐藏 Runtime Engine artifact 来伪造 live sub-agent。
 
+## Cooperative Governance Overlay
+
+版本 `1.5.0` 明确本 skill 是 non-exclusive 的治理层。它不替代系统级 skills、superpowers-style skills、browser tools、research tools、code-generation skills、debugging skills 或 document/data skills。
+
+当 `$prompt-to-loop-engineering` 被显式调用，或 `AGENTS.md` 加载本合同后，它会在非平凡 scaffold 创建或生命周期激活前治理五个变量：
+
+- `task_classification`
+- `capability_snapshot`
+- `lineup_recommendation`
+- `loop_boundary`
+- `approval_state`
+
+Specialized skills 仍然是各自领域的主要能力提供者。loop scaffold 只能把它们引用为 host-resolved atomic capabilities：Codex 可以通过正常宿主路由或明确暴露的 tool API 使用它们，但本 skill 不得假装它们是私有函数、后台 worker 或异步工具。
+
+这是一种 AGENTS-scoped middleware semantics，不是 transparent global interceptor。如果本合同没有通过显式调用或更高优先级指令层加载，它不能静默拦截每一次 Codex action。
+
 ## 在 Codex 项目中使用
 
 安装后，在任意 Codex 项目中输入：
@@ -235,6 +252,15 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v1.5.0 (2026-07-05)
+
+- 增加 `Cooperative Governance Overlay` 合同。
+- 明确本 skill 是 non-exclusive，不能声称拥有整个会话的独占路由权。
+- 定义 AGENTS-scoped middleware semantics，同时禁止 background daemon、global hook、scheduler 或 hidden runtime 行为。
+- 将外部 skills、plugins、connectors 和 tools 重构为 host-resolved atomic capabilities，而不是可直接调用的私有函数。
+- 增加五个治理变量：`task_classification`、`capability_snapshot`、`lineup_recommendation`、`loop_boundary` 和 `approval_state`。
+- 保留 specialized host skills 作为主要能力提供者，同时由本 skill 治理 loop design、approval、scaffold persistence 和 lifecycle boundaries。
 
 ### v1.4.0 (2026-07-02)
 

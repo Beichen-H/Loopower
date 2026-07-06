@@ -5,7 +5,7 @@ description: Use when a natural-language task must be converted into a role-neut
 
 # Prompt to Loop Engineering
 
-**Skill version:** `1.4.0`
+**Skill version:** `1.5.0`
 **Normative contract:** Loop Engineering KB `v4.0.2`
 **Self-design graph:** [`loop_spec.json`](loop_spec.json)
 
@@ -35,6 +35,69 @@ This Skill contains no Runtime Engine and must never scaffold one. Runtime capab
 Transform one natural-language task request into a deterministic `loop_design_result`. Select the simplest sufficient disposition: `one_shot`, `workflow`, `agent_loop`, `needs_input`, `unsupported`, or `rejected`.
 
 This Skill performs design-time analysis and Codex-native configuration scaffolding only. It does not grant permissions, invent runtime capabilities, or claim that the user task passed. When the user asks to run or continue the generated loop, Codex reads the persisted scaffold and acts as the host executor under the active session permissions.
+
+## Cooperative Governance Overlay
+
+This Skill is a cooperative governance layer for loop design, approval boundaries, scaffold persistence, and lifecycle constraints. It is not an exclusive session router and must not compete with specialized host skills for domain execution.
+
+### Non-exclusive Routing Contract
+
+This Skill MUST NOT claim exclusive routing ownership over the Codex session. It governs the task contract, LoopSpec design, two-stage approval, scaffold persistence, lifecycle boundaries, and static validation only.
+
+Specialized host skills remain primary capability providers for their domains. Network research, browser automation, code generation, document handling, debugging, testing, data processing, and other concrete operations should continue to route to the most appropriate installed skill, plugin, connector, or host tool under the active Codex routing rules.
+
+This Skill may recommend that Codex use a specialized skill, but it MUST NOT demote that skill into a private subordinate, bypass its instructions, override its safety policy, or obscure its provenance.
+
+### AGENTS-scoped Middleware Semantics
+
+Middleware-like behavior is active only when this Skill is explicitly invoked, or when a global or project-level `AGENTS.md` file imports, requires, or otherwise states this governance contract.
+
+This Skill is not a background daemon, global hook, scheduler, or hidden runtime. It cannot transparently watch every request, intercept every tool call, or force itself into every skill route unless a higher-priority host instruction layer has loaded this contract.
+
+When loaded through `AGENTS.md`, the contract acts as an instruction overlay: Codex must apply the two-stage approval gate and governance variables before non-trivial scaffold creation or lifecycle activation, while still letting specialized skills perform their normal domain work.
+
+### Host-resolved Atomic Capability Contract
+
+External skills, plugins, MCP connectors, host tools, and built-in Codex behaviors may be referenced as host-resolved atomic capabilities.
+
+They MUST NOT be modeled as directly callable functions unless the active host exposes a concrete callable tool API for that capability. For example, a sub-agent prompt may instruct a role to use a research skill or browser tool if available, but it must not invent calls such as `await superpowers.search()` or treat a skill as a private library function.
+
+Every host-resolved atomic capability used in a generated LoopSpec or scaffold must remain bound to the observed capability snapshot, active user permissions, tool approval requirements, and the source skill's own instructions.
+
+### Cooperative Skill Dispatch Rule
+
+When a specialized skill is more appropriate for a concrete operation, Codex SHOULD use that skill under the current host routing rules while preserving this Skill's governance constraints.
+
+The cooperative hierarchy is:
+
+1. Higher-priority host, developer, safety, and project instructions remain authoritative.
+2. This Skill governs loop design, approval state, scaffold persistence, lifecycle boundaries, and static validation.
+3. Specialized skills and tools provide host-resolved atomic capabilities for concrete work.
+4. `.codex-loop/` records configuration and lightweight status only; it never becomes an execution engine.
+
+### Five Governance Variables
+
+For non-trivial tasks governed by this Skill or by an `AGENTS.md` overlay, Codex must track these five variables before scaffold initialization, lifecycle activation, or continuation:
+
+- `task_classification`: `trivial`, `non_trivial`, `needs_input`, `unsupported`, or `rejected`, with evidence.
+- `capability_snapshot`: observed host capabilities, available tools, active sandbox, sub-agent support, approval requirements, and unavailable capabilities.
+- `lineup_recommendation`: proposed roles such as `planner`, `executor`, and optional `reviewer`, with why each role is needed.
+- `loop_boundary`: maximum iterations, budgets, exit signals, stagnation rules, write boundaries, and validation command.
+- `approval_state`: `not_required`, `pending`, `approved`, `denied`, or `lifecycle_activation_blocked`.
+
+These variables may be represented in a proposal, `.codex-loop/agent_manifest.json`, `.codex-loop/loop_spec.json`, `.codex-loop/guardrails.json`, `.codex-loop/.status`, or the final response. They must not be hidden in vague natural language.
+
+### No Transparent Interception Claim
+
+This Skill MUST NOT claim that it can transparently intercept every Codex action, every host skill invocation, or every tool call unless the host has explicitly loaded this contract at a higher-priority instruction layer.
+
+If this contract is not loaded and the user invokes another skill directly, this Skill has no authority to retroactively govern that route. If this contract is loaded by `AGENTS.md`, Codex must apply it as an instruction overlay, not as a hidden process.
+
+### Subagent Capability Boundary
+
+Sub-agents may receive prompts that recommend specialized skills, plugins, connectors, or host-resolved atomic capabilities, but activation and capability access remain host-controlled.
+
+A sub-agent prompt MUST NOT assume asynchronous access to another skill, background execution, parallelism, network access, durable state, approval bypass, or tool permissions unless those capabilities are present in the observed host capability snapshot and permitted by policy.
 
 ## Defensive Designing Principle
 

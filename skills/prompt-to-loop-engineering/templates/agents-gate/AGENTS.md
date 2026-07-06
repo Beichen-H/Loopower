@@ -4,6 +4,8 @@ This file is an optional project-level `AGENTS.md` gate for Codex projects that 
 
 It does not grant new permissions, install a Runtime Engine, or authorize hidden background work. It only forces Codex to pause before initializing `.codex-loop/` or using sub-agent delegation for non-trivial work.
 
+It is a cooperative governance overlay, not an exclusive router. Codex MUST continue to use specialized host skills, plugins, connectors, and tools for their normal domains while applying this gate to non-trivial scaffold creation, lifecycle activation, and approval boundaries. Those capabilities are host-resolved atomic capabilities, not private functions owned by this gate.
+
 ## Scope
 
 Use this gate for Non-trivial tasks, including tasks that involve any of the following:
@@ -72,5 +74,7 @@ When the user did not specify bounds, Codex MUST use these defaults:
 
 - MUST NOT create `runtime/`, `state.json`, queues, databases, checkpoint stores, or hidden execution engines inside `.codex-loop/`.
 - MUST NOT treat this gate as user approval.
+- MUST NOT claim transparent interception of every Codex action or every Skill invocation unless this file has been loaded by the active host instruction layer.
+- MUST NOT override specialized skills that are better suited to concrete operations.
 - MUST NOT use sub-agent delegation to bypass the user's permissions, workspace policy, or tool approval requirements.
 - MUST NOT continue past the Stage 1 stop line without explicit user approval.

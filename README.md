@@ -2,9 +2,9 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.4.0`: a Codex-native Loop Agent Builder and Live Subagent Bridge. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should activate the scaffold through host-native live sub-agent APIs when those APIs are available.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.5.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, and Cooperative Governance Overlay. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, and host-native live sub-agent activation without taking exclusive control of the session.
 
-This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host, and continues work under the active user/session permissions.
+This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
 
 [中文说明](README-CN.md)
 
@@ -17,7 +17,8 @@ This project does not contain an independent Runtime Engine. Codex is the host e
 - a `guardrails.json` file for forbidden commands, write boundaries, approval-required actions, and stop conditions;
 - compact sub-agent prompts such as `planner.md` and `executor.md`;
 - an optional `.status` file that stores only the current stage/node id;
-- an activation contract for aligning `.codex-loop/subagents/*.md` with the Codex host's Live Subagents Panel.
+- an activation contract for aligning `.codex-loop/subagents/*.md` with the Codex host's Live Subagents Panel;
+- a non-exclusive governance overlay that keeps specialized skills available as host-resolved atomic capabilities.
 
 It is intentionally small. `.codex-loop/` is configuration, not a database, queue, checkpoint store, or hidden runtime.
 
@@ -140,6 +141,22 @@ Each live role must use the corresponding local prompt file as its authoritative
 
 If the active Codex host does not expose a native live sub-agent API, Codex must report `lifecycle_activation_blocked`. It must not emulate live sub-agents by creating queues, databases, daemons, or hidden Runtime Engine artifacts.
 
+## Cooperative Governance Overlay
+
+Version `1.5.0` makes the skill explicitly non-exclusive. It does not replace system-level skills, superpowers-style skills, browser tools, research tools, code-generation skills, debugging skills, or document/data skills.
+
+Instead, when `$prompt-to-loop-engineering` is invoked or when an `AGENTS.md` file loads this contract, it governs five variables before non-trivial scaffold creation or lifecycle activation:
+
+- `task_classification`
+- `capability_snapshot`
+- `lineup_recommendation`
+- `loop_boundary`
+- `approval_state`
+
+Specialized skills remain primary providers for their own domains. The loop scaffold may reference them only as host-resolved atomic capabilities: Codex may use them through normal host routing or concrete exposed tool APIs, but this skill must not pretend they are private functions, background workers, or asynchronous tools.
+
+This is AGENTS-scoped middleware semantics, not a transparent global interceptor. If the contract is not loaded by explicit invocation or a higher-priority instruction layer, it cannot silently intercept every Codex action.
+
 ## Use in a Codex project
 
 After installation, open any project in Codex and ask:
@@ -235,6 +252,15 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v1.5.0 (2026-07-05)
+
+- Added the `Cooperative Governance Overlay` contract.
+- Clarified that the skill is non-exclusive and must not claim session-wide routing ownership.
+- Defined AGENTS-scoped middleware semantics without background daemon, global hook, scheduler, or hidden runtime behavior.
+- Reframed external skills, plugins, connectors, and tools as host-resolved atomic capabilities rather than directly callable private functions.
+- Added the five governance variables: `task_classification`, `capability_snapshot`, `lineup_recommendation`, `loop_boundary`, and `approval_state`.
+- Preserved specialized host skills as primary capability providers while keeping loop design, approval, scaffold persistence, and lifecycle boundaries under this skill's governance.
 
 ### v1.4.0 (2026-07-02)
 

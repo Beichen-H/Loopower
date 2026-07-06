@@ -102,9 +102,9 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `1.4.0`", skill)
-        self.assertIn("### v1.4.0 (2026-07-02)", readme)
-        self.assertIn("### v1.4.0 (2026-07-02)", readme_cn)
+        self.assertIn("**Skill version:** `1.5.0`", skill)
+        self.assertIn("### v1.5.0 (2026-07-05)", readme)
+        self.assertIn("### v1.5.0 (2026-07-05)", readme_cn)
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -146,6 +146,31 @@ class SkillSurfaceTests(unittest.TestCase):
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing lifecycle activation phrases: {missing}")
 
+    def test_cooperative_governance_overlay_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "Cooperative Governance Overlay",
+            "Non-exclusive Routing Contract",
+            "MUST NOT claim exclusive routing ownership",
+            "Specialized host skills remain primary capability providers",
+            "AGENTS-scoped Middleware Semantics",
+            "not a background daemon, global hook, scheduler, or hidden runtime",
+            "Host-resolved Atomic Capability Contract",
+            "MUST NOT be modeled as directly callable functions",
+            "Cooperative Skill Dispatch Rule",
+            "Five Governance Variables",
+            "`task_classification`",
+            "`capability_snapshot`",
+            "`lineup_recommendation`",
+            "`loop_boundary`",
+            "`approval_state`",
+            "No Transparent Interception Claim",
+            "MUST NOT claim that it can transparently intercept every Codex action",
+            "Subagent Capability Boundary",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing cooperative overlay phrases: {missing}")
+
     def test_defensive_designing_fallback_contract_is_documented(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_phrases = [
@@ -182,6 +207,9 @@ class SkillSurfaceTests(unittest.TestCase):
                 "Two-stage Delegation Approval Gate",
                 "Live Subagent Bridge",
                 "installed-mode",
+                "Cooperative Governance Overlay",
+                "non-exclusive",
+                "host-resolved atomic capabilities",
             ]:
                 self.assertIn(phrase, content)
 
