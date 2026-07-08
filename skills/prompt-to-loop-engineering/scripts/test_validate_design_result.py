@@ -13,6 +13,12 @@ from validate_design_result import DesignValidationError, validate_design_result
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES = SKILL_ROOT / "examples"
 REQUESTS = EXAMPLES / "requests"
+SUBAGENT_DISCOVERY_CONTEXT = {
+    "kind": "subagent_discovery",
+    "method": "tool_search",
+    "queries": ["spawn_agent", "spawn_subagent", "subagent", "multi_agent"],
+    "result": "no_host_native_lifecycle_tool_found",
+}
 
 
 def load_example(name: str) -> dict:
@@ -37,7 +43,7 @@ def minimal_request(**capability_overrides: object) -> dict:
     return {
         "request_id": "unit-test-request",
         "task_prompt": "Build a static design only.",
-        "known_context": [],
+        "known_context": [copy.deepcopy(SUBAGENT_DISCOVERY_CONTEXT)],
         "runtime_capabilities": capabilities,
         "policy_constraints": {
             "allowed_side_effects": [],
@@ -132,6 +138,19 @@ class DesignResultValidationTests(unittest.TestCase):
                 mutate(payload["loop_spec"])
                 with self.assertRaisesRegex(DesignValidationError, capability):
                     validate_design_result(payload, minimal_request())
+
+    def test_rejects_subagents_false_without_tool_search_discovery_evidence(self) -> None:
+        payload = load_example("one_shot.json")
+        request = minimal_request()
+        request["known_context"] = []
+        with self.assertRaisesRegex(DesignValidationError, "subagents=false"):
+            validate_design_result(payload, request)
+
+    def test_rejects_subagents_false_when_native_lifecycle_tool_is_available(self) -> None:
+        payload = load_example("one_shot.json")
+        request = minimal_request(available_tools=["multi_agent_v1.spawn_agent"])
+        with self.assertRaisesRegex(DesignValidationError, "subagents must be true"):
+            validate_design_result(payload, request)
 
     def test_rejects_unregistered_tool_binding(self) -> None:
         payload = load_example("workflow.json")

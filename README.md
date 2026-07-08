@@ -2,7 +2,7 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.6.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, Cooperative Governance Overlay, and Model Configuration Inheritance Contract. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, host-native live sub-agent activation, and sub-agent reasoning intensity alignment without taking exclusive control of the session.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.6.1`: a Codex-native Loop Agent Builder, Live Subagent Bridge, Cooperative Governance Overlay, and Model Configuration Inheritance Contract. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, host-native live sub-agent activation, and sub-agent reasoning intensity alignment without taking exclusive control of the session.
 
 This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
 
@@ -142,6 +142,8 @@ Each live role must use the corresponding local prompt file as its authoritative
 
 If the active Codex host does not expose a native live sub-agent API, Codex must report `lifecycle_activation_blocked`. It must not emulate live sub-agents by creating queues, databases, daemons, or hidden Runtime Engine artifacts.
 
+Before Codex sets `runtime_capabilities.subagents=false`, it must first use `tool_search` to discover `spawn_agent`, `spawn_subagent`, `subagent`, and `multi_agent` lifecycle tools. If discovery finds a host-native lifecycle tool, `subagents` must be `true`; only a recorded `tool_search` miss such as `no_host_native_lifecycle_tool_found` may justify `subagents=false`.
+
 ## Model Configuration Inheritance Contract
 
 Version `1.6.0` adds the `Model Configuration Inheritance Contract`.
@@ -186,6 +188,8 @@ Instead, when `$prompt-to-loop-engineering` is invoked or when an `AGENTS.md` fi
 Specialized skills remain primary providers for their own domains. The loop scaffold may reference them only as host-resolved atomic capabilities: Codex may use them through normal host routing or concrete exposed tool APIs, but this skill must not pretend they are private functions, background workers, or asynchronous tools.
 
 This is AGENTS-scoped middleware semantics, not a transparent global interceptor. If the contract is not loaded by explicit invocation or a higher-priority instruction layer, it cannot silently intercept every Codex action.
+
+When this skill is invoked, or when an `AGENTS.md` overlay loads it, its mandatory execution protocol remains the primary workflow for loop design and scaffold lifecycle. External plan helpers such as `superpowers:executing-plans` may be used only as auxiliary checklists after they are reconciled with this skill; they cannot override approval gates, validation, planner/executor separation, or live sub-agent activation.
 
 ## Use in a Codex project
 
@@ -282,6 +286,12 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v1.6.1 (2026-07-08)
+
+- Added workflow precedence rules so external plan helpers, including `superpowers:executing-plans`, cannot override this skill's mandatory execution protocol.
+- Required `tool_search` discovery for host-native sub-agent lifecycle tools before normalizing `runtime_capabilities.subagents`.
+- Strengthened validation so `subagents=false` requires evidence that `spawn_agent` / `spawn_subagent` / `subagent` / `multi_agent` discovery was attempted and no host-native lifecycle tool was available.
 
 ### v1.6.0 (2026-07-06)
 

@@ -3,7 +3,7 @@
   "manifest_id": "codex-native-feature-agent@1",
   "created_by_skill": {
     "name": "prompt-to-loop-engineering",
-    "version": "1.6.0"
+    "version": "1.6.1"
   },
   "codex_host": {
     "executor": "codex",

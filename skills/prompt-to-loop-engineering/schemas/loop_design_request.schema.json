@@ -22,7 +22,8 @@
       "minLength": 1
     },
     "known_context": {
-      "type": "array"
+      "type": "array",
+      "description": "Trusted or provenance-tagged facts. When runtime_capabilities.subagents is false, include evidence that tool_search checked spawn_agent/spawn_subagent/subagent/multi_agent and no host-native lifecycle tool was available."
     },
     "runtime_capabilities": {
       "type": "object",
@@ -41,7 +42,11 @@
         "sandbox": { "type": "boolean", "default": false },
         "human_interrupt": { "type": "boolean", "default": false },
         "parallel_execution": { "type": "boolean", "default": false },
-        "subagents": { "type": "boolean", "default": false },
+        "subagents": {
+          "type": "boolean",
+          "default": false,
+          "description": "True only when host-native sub-agent lifecycle capability is discovered. False requires recorded tool_search evidence in known_context or validation assumptions."
+        },
         "required_subagent_reasoning_intensity": {
           "type": ["string", "null"],
           "enum": ["extended_thought", null],

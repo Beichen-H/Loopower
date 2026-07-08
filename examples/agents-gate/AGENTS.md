@@ -6,6 +6,8 @@ It does not grant new permissions, install a Runtime Engine, or authorize hidden
 
 It is a cooperative governance overlay, not an exclusive router. Codex MUST continue to use specialized host skills, plugins, connectors, and tools for their normal domains while applying this gate to non-trivial scaffold creation, lifecycle activation, and approval boundaries. Those capabilities are host-resolved atomic capabilities, not private functions owned by this gate.
 
+When this gate is active, `$prompt-to-loop-engineering` is the primary workflow for loop design, scaffold lifecycle, and validation. External plan helpers such as `superpowers:executing-plans` may be used only as auxiliary checklists after they are reconciled with this gate; they cannot override approval gates, validation, planner/executor separation, or live sub-agent activation.
+
 ## Scope
 
 Use this gate for Non-trivial tasks, including tasks that involve any of the following:
@@ -30,8 +32,9 @@ The proposal MUST include:
 1. `Task classification`: trivial or Non-trivial, with evidence.
 2. `Lineup Recommendation`: recommended roles, usually `planner` and `executor`, with optional `reviewer` only when independent review materially reduces risk.
 3. `Loop Boundary`: proposed maximum iterations, default exit signal, guardrails, write boundaries, and validation command.
-4. `Scaffold decision`: whether `$prompt-to-loop-engineering` should create or update `.codex-loop/`.
-5. `Risks and approvals`: any external write, network, credential, destructive command, or irreversible action requiring approval.
+4. `Capability Snapshot`: before setting `subagents=false`, call `tool_search` for `spawn_agent`, `spawn_subagent`, `subagent`, and `multi_agent`; set `subagents=true` if a host-native lifecycle tool is found, or record `no_host_native_lifecycle_tool_found` if none is available.
+5. `Scaffold decision`: whether `$prompt-to-loop-engineering` should create or update `.codex-loop/`.
+6. `Risks and approvals`: any external write, network, credential, destructive command, or irreversible action requiring approval.
 
 End Stage 1 with exactly this visible gate:
 
@@ -77,4 +80,5 @@ When the user did not specify bounds, Codex MUST use these defaults:
 - MUST NOT claim transparent interception of every Codex action or every Skill invocation unless this file has been loaded by the active host instruction layer.
 - MUST NOT override specialized skills that are better suited to concrete operations.
 - MUST NOT use sub-agent delegation to bypass the user's permissions, workspace policy, or tool approval requirements.
+- MUST NOT write `subagents=false` without recorded `tool_search` evidence that no host-native sub-agent lifecycle tool is available.
 - MUST NOT continue past the Stage 1 stop line without explicit user approval.

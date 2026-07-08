@@ -2,7 +2,7 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.6.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge、Cooperative Governance Overlay 与 Model Configuration Inheritance Contract。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期、宿主原生 live sub-agent 激活和子智能体推理强度对齐。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.6.1`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge、Cooperative Governance Overlay 与 Model Configuration Inheritance Contract。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期、宿主原生 live sub-agent 激活和子智能体推理强度对齐。
 
 本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
 
@@ -142,6 +142,8 @@ cp skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/yo
 
 如果当前 Codex 宿主没有原生 live sub-agent API，Codex 必须报告 `lifecycle_activation_blocked`。它不得通过创建队列、数据库、daemon 或隐藏 Runtime Engine artifact 来伪造 live sub-agent。
 
+Codex 在写入 `runtime_capabilities.subagents=false` 之前，必须先用 `tool_search` 搜索 `spawn_agent`、`spawn_subagent`、`subagent` 和 `multi_agent` lifecycle tools。如果发现宿主原生 lifecycle tool，`subagents` 必须为 `true`；只有记录了类似 `no_host_native_lifecycle_tool_found` 的 `tool_search` 未命中证据后，才允许写 `subagents=false`。
+
 ## Model Configuration Inheritance Contract
 
 版本 `1.6.0` 增加 `Model Configuration Inheritance Contract`。
@@ -186,6 +188,8 @@ model_config: inherit_parent
 Specialized skills 仍然是各自领域的主要能力提供者。loop scaffold 只能把它们引用为 host-resolved atomic capabilities：Codex 可以通过正常宿主路由或明确暴露的 tool API 使用它们，但本 skill 不得假装它们是私有函数、后台 worker 或异步工具。
 
 这是一种 AGENTS-scoped middleware semantics，不是 transparent global interceptor。如果本合同没有通过显式调用或更高优先级指令层加载，它不能静默拦截每一次 Codex action。
+
+当本 skill 被调用，或 `AGENTS.md` overlay 加载本合同时，本 skill 的 mandatory execution protocol 是 loop design 与 scaffold lifecycle 的主工作流。`superpowers:executing-plans` 等外部 plan helpers 只能在与本 skill 协议对齐后作为辅助 checklist 使用，不能覆盖审批门禁、验证流程、planner/executor 分工或 live sub-agent 激活。
 
 ## 在 Codex 项目中使用
 
@@ -282,6 +286,12 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v1.6.1 (2026-07-08)
+
+- 增加 workflow precedence 规则，防止 `superpowers:executing-plans` 等外部 plan helpers 覆盖本 skill 的 mandatory execution protocol。
+- 要求在 normalizing `runtime_capabilities.subagents` 之前，先通过 `tool_search` 发现宿主原生 sub-agent lifecycle tools。
+- 加强验证：`subagents=false` 必须包含已尝试搜索 `spawn_agent` / `spawn_subagent` / `subagent` / `multi_agent` 且未发现宿主原生 lifecycle tool 的证据。
 
 ### v1.6.0 (2026-07-06)
 
