@@ -105,6 +105,14 @@ REQUIRED_STATIC_CHECKS = {
     "threshold_sources",
     "reference_resolution",
 }
+SUBAGENT_DISCOVERY_TOKENS = (
+    "tool_search",
+    "spawn_agent",
+    "spawn_subagent",
+    "subagent",
+    "multi_agent",
+    "no_host_native_lifecycle_tool_found",
+)
 
 
 class DesignValidationError(AssertionError):
@@ -144,6 +152,39 @@ def _string_list(value: Any, path: str, *, non_empty: bool = False) -> list[str]
         _non_empty_string(item, f"{path}[{index}]")
     _require(len(values) == len(set(values)), f"{path} must contain unique values")
     return values
+
+
+def _flatten_for_evidence(value: Any) -> str:
+    if isinstance(value, str):
+        return value.lower()
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True).lower()
+    except TypeError:
+        return repr(value).lower()
+
+
+def _has_subagent_discovery_evidence(values: list[Any]) -> bool:
+    haystack = "\n".join(_flatten_for_evidence(value) for value in values)
+    return all(token in haystack for token in SUBAGENT_DISCOVERY_TOKENS)
+
+
+def _validate_subagent_capability_discovery(
+    *,
+    capabilities: dict[str, Any],
+    request: dict[str, Any],
+    result_assumptions: list[Any],
+    validation_assumptions: list[Any],
+) -> None:
+    if capabilities["subagents"]:
+        return
+    evidence_sources: list[Any] = []
+    evidence_sources.extend(_list(request.get("known_context", []), "Loop_design_request.known_context"))
+    evidence_sources.extend(result_assumptions)
+    evidence_sources.extend(validation_assumptions)
+    _require(
+        _has_subagent_discovery_evidence(evidence_sources),
+        "runtime_capabilities.subagents=false requires tool_search evidence for spawn_agent, spawn_subagent, subagent, and multi_agent returning no_host_native_lifecycle_tool_found",
+    )
 
 
 def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -210,7 +251,7 @@ def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> 
     criterion_ids, mandatory_ids = _validate_task_contract(
         _object(result["task_contract"], "task_contract")
     )
-    _list(result["assumptions"], "assumptions")
+    result_assumptions = _list(result["assumptions"], "assumptions")
     missing_inputs = _list(result["missing_inputs"], "missing_inputs")
     _list(result["rejected_alternatives"], "rejected_alternatives")
 
@@ -219,7 +260,13 @@ def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> 
     _require(type(validation_report["valid"]) is bool, "validation_report.valid must be boolean")
     errors = _list(validation_report["errors"], "validation_report.errors")
     _list(validation_report["warnings"], "validation_report.warnings")
-    _list(validation_report["assumptions"], "validation_report.assumptions")
+    validation_assumptions = _list(validation_report["assumptions"], "validation_report.assumptions")
+    _validate_subagent_capability_discovery(
+        capabilities=capabilities,
+        request=request,
+        result_assumptions=result_assumptions,
+        validation_assumptions=validation_assumptions,
+    )
 
     build_report = _object(result["build_report"], "build_report")
     _require_keys(

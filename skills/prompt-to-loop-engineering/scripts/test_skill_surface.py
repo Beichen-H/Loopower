@@ -220,6 +220,28 @@ class SkillSurfaceTests(unittest.TestCase):
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing evidence governance phrases: {missing}")
 
+    def test_workflow_precedence_and_subagent_discovery_contracts_are_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "Workflow Precedence Rule",
+            "mandatory execution protocol",
+            "superpowers:executing-plans",
+            "auxiliary checklist",
+            "MUST NOT override approval gates",
+            "MUST NOT override validation flow",
+            "MUST NOT override role splitting",
+            "MUST NOT override sub-agent lifecycle activation",
+            "Subagent Capability Discovery Guard",
+            "MUST call `tool_search`",
+            "`spawn_agent`",
+            "`spawn_subagent`",
+            "`subagent`",
+            "`multi_agent`",
+            "`no_host_native_lifecycle_tool_found`",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing precedence/discovery phrases: {missing}")
+
     def test_defensive_designing_fallback_contract_is_documented(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_phrases = [
@@ -359,6 +381,14 @@ class SkillSurfaceTests(unittest.TestCase):
         contents = [path.read_text(encoding="utf-8") for path in gate_paths]
         required_phrases = [
             "Two-stage Delegation Approval Gate",
+            "Workflow Precedence Rule",
+            "mandatory execution protocol",
+            "superpowers:executing-plans",
+            "auxiliary checklist",
+            "MUST NOT override approval gates",
+            "MUST NOT override validation flow",
+            "MUST NOT override role splitting",
+            "MUST NOT override sub-agent lifecycle activation",
             "Non-trivial",
             "Lineup Recommendation",
             "Loop Boundary",

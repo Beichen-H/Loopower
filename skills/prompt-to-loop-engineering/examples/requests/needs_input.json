@@ -1,7 +1,13 @@
 {
   "request_id": "example-needs-input-request",
   "task_prompt": "Design a deployment workflow for my selected target, but no target was supplied.",
-  "known_context": [],
+  "known_context": [
+    {
+      "source": "tool_search",
+      "query": "spawn_agent spawn_subagent subagent multi_agent",
+      "result": "no_host_native_lifecycle_tool_found"
+    }
+  ],
   "runtime_capabilities": {
     "available_tools": [],
     "durable_state": false,

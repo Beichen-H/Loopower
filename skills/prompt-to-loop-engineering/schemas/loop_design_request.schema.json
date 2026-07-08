@@ -41,7 +41,11 @@
         "sandbox": { "type": "boolean", "default": false },
         "human_interrupt": { "type": "boolean", "default": false },
         "parallel_execution": { "type": "boolean", "default": false },
-        "subagents": { "type": "boolean", "default": false },
+        "subagents": {
+          "type": "boolean",
+          "default": false,
+          "description": "Host-native sub-agent lifecycle capability. Before setting false, the builder must probe tool discovery for spawn_agent, spawn_subagent, subagent, and multi_agent and preserve no_host_native_lifecycle_tool_found evidence."
+        },
         "required_subagent_reasoning_intensity": {
           "type": ["string", "null"],
           "enum": ["extended_thought", null],

@@ -6,6 +6,14 @@ It does not grant new permissions, install a Runtime Engine, or authorize hidden
 
 It is a cooperative governance overlay, not an exclusive router. Codex MUST continue to use specialized host skills, plugins, connectors, and tools for their normal domains while applying this gate to non-trivial scaffold creation, lifecycle activation, and approval boundaries. Those capabilities are host-resolved atomic capabilities, not private functions owned by this gate.
 
+## Workflow Precedence Rule
+
+When `$prompt-to-loop-engineering` or this `AGENTS.md` gate is active, its mandatory execution protocol has precedence over external linear planning or fulfillment helpers for governed scaffold operations.
+
+External helpers such as `superpowers:executing-plans`, planning skills, checklist skills, or generic inline execution flows may be used only as an auxiliary checklist inside the currently authorized node. They MUST NOT override approval gates, MUST NOT override validation flow, MUST NOT override role splitting, and MUST NOT override sub-agent lifecycle activation.
+
+This precedence is scoped to LoopSpec design, two-stage approval, scaffold persistence, guardrail validation, evidence validation, role prompts, and lifecycle activation. It does not seize ownership of unrelated domain-specific tool behavior, and it does not create a hidden runtime.
+
 ## Scope
 
 Use this gate for Non-trivial tasks, including tasks that involve any of the following:

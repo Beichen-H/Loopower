@@ -37,7 +37,13 @@ def minimal_request(**capability_overrides: object) -> dict:
     return {
         "request_id": "unit-test-request",
         "task_prompt": "Build a static design only.",
-        "known_context": [],
+        "known_context": [
+            {
+                "source": "tool_search",
+                "query": "spawn_agent spawn_subagent subagent multi_agent",
+                "result": "no_host_native_lifecycle_tool_found",
+            }
+        ],
         "runtime_capabilities": capabilities,
         "policy_constraints": {
             "allowed_side_effects": [],
@@ -225,6 +231,29 @@ class DesignResultValidationTests(unittest.TestCase):
         payload["loop_spec"]["control_flow"]["cycles"] = []
         with self.assertRaisesRegex(DesignValidationError, "undeclared directed cycle"):
             validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_subagents_false_without_tool_search_discovery_evidence(self) -> None:
+        payload = load_example("one_shot.json")
+        request = minimal_request()
+        request["known_context"] = []
+        payload["assumptions"] = []
+        payload["validation_report"]["assumptions"] = []
+
+        with self.assertRaisesRegex(
+            DesignValidationError,
+            "no_host_native_lifecycle_tool_found",
+        ):
+            validate_design_result(payload, request)
+
+    def test_accepts_subagents_false_when_tool_search_evidence_is_in_result_assumptions(self) -> None:
+        payload = load_example("one_shot.json")
+        request = minimal_request()
+        request["known_context"] = []
+        payload["assumptions"] = [
+            "tool_search queried spawn_agent, spawn_subagent, subagent, and multi_agent; result=no_host_native_lifecycle_tool_found"
+        ]
+
+        validate_design_result(payload, request)
 
 
 if __name__ == "__main__":
