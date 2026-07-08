@@ -32,6 +32,20 @@
     },
     "capability_mismatches": []
   },
+  "execution_governance": {
+    "runtime_mode": "COOPERATIVE_GOVERNANCE",
+    "scheduler": "codex_loop_dag",
+    "inline_execution_policy": "forbidden_for_subagent_nodes",
+    "required_evidence": {
+      "activation": true,
+      "handoff": true,
+      "completion": true
+    },
+    "linear_fulfillment_plugins": {
+      "scheduler_takeover": "forbidden",
+      "allowed_role": "node_scoped_atomic_capability"
+    }
+  },
   "state": {
     "schema": {
       "current_stage": "string",

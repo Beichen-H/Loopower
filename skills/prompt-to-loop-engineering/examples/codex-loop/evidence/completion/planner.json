@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_type": "completion",
+  "node_id": "planner",
+  "subagent_id": "planner",
+  "status": "completed",
+  "inline_fulfillment": false,
+  "artifact_refs": [".codex-loop/evidence/handoff/planner_to_executor.json"],
+  "verification": {
+    "method": "required_fields_present",
+    "result": "passed"
+  }
+}

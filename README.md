@@ -2,7 +2,7 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.6.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, Cooperative Governance Overlay, and Model Configuration Inheritance Contract. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, host-native live sub-agent activation, and sub-agent reasoning intensity alignment without taking exclusive control of the session.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.7.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, Cooperative Governance Overlay, Model Configuration Inheritance Contract, and Evidence-Locked DAG Execution Governance layer. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, host-native live sub-agent activation, sub-agent reasoning intensity alignment, and post-hoc evidence validation without taking exclusive control of the session.
 
 This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
 
@@ -19,7 +19,8 @@ This project does not contain an independent Runtime Engine. Codex is the host e
 - an optional `.status` file that stores only the current stage/node id;
 - an activation contract for aligning `.codex-loop/subagents/*.md` with the Codex host's Live Subagents Panel;
 - a non-exclusive governance overlay that keeps specialized skills available as host-resolved atomic capabilities;
-- a `required_subagent_reasoning_intensity` marker that records `extended_thought` requirements for complex live sub-agent work.
+- a `required_subagent_reasoning_intensity` marker that records `extended_thought` requirements for complex live sub-agent work;
+- an Evidence-Locked DAG Execution Governance contract that blocks validated sub-agent nodes from being replaced by inline execution.
 
 It is intentionally small. `.codex-loop/` is configuration, not a database, queue, checkpoint store, or hidden runtime.
 
@@ -187,6 +188,35 @@ Specialized skills remain primary providers for their own domains. The loop scaf
 
 This is AGENTS-scoped middleware semantics, not a transparent global interceptor. If the contract is not loaded by explicit invocation or a higher-priority instruction layer, it cannot silently intercept every Codex action.
 
+## Evidence-Locked DAG Execution Governance
+
+Version `1.7.0` adds the `Evidence-Locked DAG Execution Governance` contract.
+
+After explicit `GO`, the persisted `.codex-loop/loop_spec.json` owns DAG scheduling. Codex may still use specialized host skills as host-resolved atomic capabilities inside an authorized node, but those skills must not take over scheduling or collapse the scaffold into inline execution.
+
+Generated scaffolds now declare:
+
+```text
+loop_spec.execution_governance.runtime_mode = COOPERATIVE_GOVERNANCE
+loop_spec.execution_governance.scheduler = codex_loop_dag
+loop_spec.execution_governance.inline_execution_policy = forbidden_for_subagent_nodes
+agent_manifest.governance_overlay.host_linear_fulfillment_takeover = forbidden
+```
+
+GO-phase work that uses sub-agent-governed nodes must create lightweight evidence under:
+
+```text
+.codex-loop/evidence/activation/
+.codex-loop/evidence/handoff/
+.codex-loop/evidence/completion/
+```
+
+Use the post-hoc hard validator to reject missing activation, handoff, completion, model-inheritance, or inline-fulfillment evidence:
+
+```bash
+python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
+```
+
 ## Use in a Codex project
 
 After installation, open any project in Codex and ask:
@@ -201,6 +231,7 @@ Analyze this project request and create a lightweight .codex-loop/ Agent Config 
 - .codex-loop/subagents/planner.md
 - .codex-loop/subagents/executor.md
 - optional .codex-loop/.status
+- optional .codex-loop/evidence/ lifecycle stubs after GO-phase work begins
 
 Then validate the scaffold with the local script.
 ```
@@ -230,6 +261,10 @@ A valid scaffold has this minimal shape:
 |-- subagents/
 |   |-- planner.md
 |   `-- executor.md
+|-- evidence/
+|   |-- activation/
+|   |-- handoff/
+|   `-- completion/
 `-- .status
 ```
 
@@ -246,7 +281,9 @@ Validation rejects:
 - `runtime/`, `state.json`, queues, databases, checkpoint stores, or similar runtime artifacts;
 - multiline or invalid `.status`;
 - manifest sub-agents whose prompt files are missing;
-- manifests that claim an independent Runtime Engine.
+- manifests that claim an independent Runtime Engine;
+- evidence-governed DAG runs that omit `activation`, `handoff`, or `completion` proof;
+- inline execution evidence for sub-agent-governed nodes.
 
 ## Local verification
 
@@ -260,6 +297,13 @@ Validate the bundled scaffold example:
 
 ```bash
 python -B skills/prompt-to-loop-engineering/scripts/validate_codex_loop_scaffold.py \
+  skills/prompt-to-loop-engineering/examples/codex-loop
+```
+
+Validate post-hoc DAG execution evidence:
+
+```bash
+python -B skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py \
   skills/prompt-to-loop-engineering/examples/codex-loop
 ```
 
@@ -282,6 +326,15 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v1.7.0 (2026-07-07)
+
+- Added `Evidence-Locked DAG Execution Governance`.
+- Added `execution_governance` to `loop_spec.json` and `governance_overlay` to `agent_manifest.json`.
+- Added `.codex-loop/evidence/{activation,handoff,completion}/` example stubs.
+- Added `scripts/validate_dag_execution_evidence.py` for post-hoc hard validation.
+- Forbid linear host-skill scheduler takeover after explicit GO; specialized skills remain available only as node-scoped atomic capabilities.
+- Added tests for missing activation, handoff, completion, reasoning-inheritance, and inline execution evidence failures.
 
 ### v1.6.0 (2026-07-06)
 

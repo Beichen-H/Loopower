@@ -2,7 +2,7 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.6.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge、Cooperative Governance Overlay 与 Model Configuration Inheritance Contract。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期、宿主原生 live sub-agent 激活和子智能体推理强度对齐。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.7.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge、Cooperative Governance Overlay、Model Configuration Inheritance Contract 与 Evidence-Locked DAG Execution Governance。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期、宿主原生 live sub-agent 激活、子智能体推理强度对齐与 post-hoc evidence validation。
 
 本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
 
@@ -19,7 +19,8 @@
 - 可选 `.status` 文件，只记录当前 stage/node id；
 - 用于对齐 `.codex-loop/subagents/*.md` 与 Codex 宿主 Live Subagents Panel 的激活合同；
 - non-exclusive 治理覆盖层，让 specialized skills 继续作为 host-resolved atomic capabilities 被使用；
-- `required_subagent_reasoning_intensity` 标记，用于记录复杂 live sub-agent 工作所需的 `extended_thought` 推理强度。
+- `required_subagent_reasoning_intensity` 标记，用于记录复杂 live sub-agent 工作所需的 `extended_thought` 推理强度；
+- Evidence-Locked DAG Execution Governance，用于阻止已声明的 sub-agent 节点被主会话 inline execution 替代。
 
 它刻意保持轻量。`.codex-loop/` 是配置脚手架，不是数据库、队列、checkpoint 存储，也不是隐藏 runtime。
 
@@ -187,6 +188,35 @@ Specialized skills 仍然是各自领域的主要能力提供者。loop scaffold
 
 这是一种 AGENTS-scoped middleware semantics，不是 transparent global interceptor。如果本合同没有通过显式调用或更高优先级指令层加载，它不能静默拦截每一次 Codex action。
 
+## Evidence-Locked DAG Execution Governance
+
+版本 `1.7.0` 增加 `Evidence-Locked DAG Execution Governance`。
+
+在用户显式给出 `GO` 之后，持久化的 `.codex-loop/loop_spec.json` 拥有 DAG 调度权。Codex 仍然可以在授权节点内部使用 specialized host skills 作为 host-resolved atomic capabilities，但这些能力不得接管 scheduler，也不得把脚手架坍缩为 inline execution。
+
+生成的 scaffold 必须声明：
+
+```text
+loop_spec.execution_governance.runtime_mode = COOPERATIVE_GOVERNANCE
+loop_spec.execution_governance.scheduler = codex_loop_dag
+loop_spec.execution_governance.inline_execution_policy = forbidden_for_subagent_nodes
+agent_manifest.governance_overlay.host_linear_fulfillment_takeover = forbidden
+```
+
+依赖 sub-agent 节点的 GO 阶段工作必须在以下目录创建轻量证据：
+
+```text
+.codex-loop/evidence/activation/
+.codex-loop/evidence/handoff/
+.codex-loop/evidence/completion/
+```
+
+使用 post-hoc hard validator 拒绝缺少 activation、handoff、completion、model-inheritance 或 inline-fulfillment 证据的运行轨迹：
+
+```bash
+python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
+```
+
 ## 在 Codex 项目中使用
 
 安装后，在任意 Codex 项目中输入：
@@ -201,6 +231,7 @@ $prompt-to-loop-engineering
 - .codex-loop/subagents/planner.md
 - .codex-loop/subagents/executor.md
 - 可选 .codex-loop/.status
+- 可选 .codex-loop/evidence/ lifecycle stubs，在 GO 阶段工作开始后记录证据
 
 然后用本地脚本验证这个 scaffold。
 ```
@@ -230,6 +261,10 @@ python skills/prompt-to-loop-engineering/scripts/validate_codex_loop_scaffold.py
 |-- subagents/
 |   |-- planner.md
 |   `-- executor.md
+|-- evidence/
+|   |-- activation/
+|   |-- handoff/
+|   `-- completion/
 `-- .status
 ```
 
@@ -246,7 +281,9 @@ python skills/prompt-to-loop-engineering/scripts/validate_codex_loop_scaffold.py
 - `runtime/`、`state.json`、队列、数据库、checkpoint 存储等 runtime 产物；
 - 多行或非法 `.status`；
 - manifest 声明的 sub-agent prompt 文件不存在；
-- manifest 声称存在独立 Runtime Engine。
+- manifest 声称存在独立 Runtime Engine；
+- evidence-governed DAG runs 缺少 `activation`、`handoff` 或 `completion` 证据；
+- sub-agent-governed nodes 出现 inline execution evidence。
 
 ## 本地验证
 
@@ -260,6 +297,13 @@ python -B -m unittest discover -s skills/prompt-to-loop-engineering/scripts -p "
 
 ```bash
 python -B skills/prompt-to-loop-engineering/scripts/validate_codex_loop_scaffold.py \
+  skills/prompt-to-loop-engineering/examples/codex-loop
+```
+
+验证 post-hoc DAG execution evidence：
+
+```bash
+python -B skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py \
   skills/prompt-to-loop-engineering/examples/codex-loop
 ```
 
@@ -282,6 +326,15 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v1.7.0 (2026-07-07)
+
+- 增加 `Evidence-Locked DAG Execution Governance`。
+- 在 `loop_spec.json` 增加 `execution_governance`，在 `agent_manifest.json` 增加 `governance_overlay`。
+- 增加 `.codex-loop/evidence/{activation,handoff,completion}/` 示例桩。
+- 增加 `scripts/validate_dag_execution_evidence.py`，用于 post-hoc hard validation。
+- 明确禁止显式 GO 后由线性 host skill 接管 scheduler；specialized skills 只能作为 node-scoped atomic capabilities 使用。
+- 增加缺少 activation、handoff、completion、reasoning-inheritance 与 inline execution 证据时的失败测试。
 
 ### v1.6.0 (2026-07-06)
 

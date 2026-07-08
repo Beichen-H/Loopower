@@ -103,6 +103,26 @@ def validate_manifest(root: Path, manifest: dict[str, Any]) -> None:
         manifest.get("guardrails_ref") == ".codex-loop/guardrails.json",
         "guardrails_ref must be .codex-loop/guardrails.json",
     )
+    overlay = manifest.get("governance_overlay")
+    require(isinstance(overlay, dict), "agent_manifest.governance_overlay must be an object")
+    require(
+        overlay.get("runtime_mode") == "COOPERATIVE_GOVERNANCE",
+        "governance_overlay.runtime_mode must be COOPERATIVE_GOVERNANCE",
+    )
+    require(
+        overlay.get("host_linear_fulfillment_takeover") == "forbidden",
+        "governance_overlay.host_linear_fulfillment_takeover must be forbidden",
+    )
+    require(
+        overlay.get("specialized_skills_policy") == "node_scoped_atomic_capabilities",
+        "governance_overlay.specialized_skills_policy must be node_scoped_atomic_capabilities",
+    )
+    require(
+        overlay.get("evidence_root") == ".codex-loop/evidence",
+        "governance_overlay.evidence_root must be .codex-loop/evidence",
+    )
+    refs = overlay.get("required_evidence_refs")
+    require(isinstance(refs, list), "governance_overlay.required_evidence_refs must be an array")
 
     subagents = manifest.get("subagents")
     require(isinstance(subagents, list), "agent_manifest.subagents must be an array")
@@ -146,6 +166,20 @@ def validate_guardrails(guardrails: dict[str, Any]) -> None:
 
 def validate_loop_spec(loop_spec: dict[str, Any]) -> None:
     require(isinstance(loop_spec.get("control_flow"), dict), "loop_spec.control_flow must be present")
+    governance = loop_spec.get("execution_governance")
+    require(isinstance(governance, dict), "loop_spec.execution_governance must be present")
+    require(
+        governance.get("runtime_mode") == "COOPERATIVE_GOVERNANCE",
+        "execution_governance.runtime_mode must be COOPERATIVE_GOVERNANCE",
+    )
+    require(
+        governance.get("scheduler") == "codex_loop_dag",
+        "execution_governance.scheduler must be codex_loop_dag",
+    )
+    require(
+        governance.get("inline_execution_policy") == "forbidden_for_subagent_nodes",
+        "execution_governance.inline_execution_policy must be forbidden_for_subagent_nodes",
+    )
     runtime_binding = loop_spec.get("runtime_binding")
     require(isinstance(runtime_binding, dict), "loop_spec.runtime_binding must be present")
     capabilities_snapshot = runtime_binding.get("capabilities_snapshot")

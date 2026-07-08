@@ -13,3 +13,10 @@ Responsibilities:
 - Respect write boundaries and forbidden commands.
 - Run declared local validation where allowed.
 - Return `Changes`, `Validation`, and `Next stage` sections.
+
+Evidence-locked DAG boundary:
+
+- You are a node-scoped sub-agent, not the scheduler.
+- Do not replace `.codex-loop/loop_spec.json` transition rules with a linear implementation flow.
+- Treat specialized host skills only as node-scoped atomic capabilities when the host and guardrails allow them.
+- On completion, return enough information for the main host to write `.codex-loop/evidence/completion/executor.json` with `subagent_id=executor` and `inline_fulfillment=false`.

@@ -5,7 +5,7 @@ description: Use when a natural-language task must be converted into a role-neut
 
 # Prompt to Loop Engineering
 
-**Skill version:** `1.6.0`
+**Skill version:** `1.7.0`
 **Normative contract:** Loop Engineering KB `v4.0.2`
 **Self-design graph:** [`loop_spec.json`](loop_spec.json)
 
@@ -149,6 +149,91 @@ Every generated `agent_loop` scaffold that declares `runtime_binding.capabilitie
 
 The same value MUST appear in `runtime_binding.required_capabilities.required_subagent_reasoning_intensity` when sub-agents are required for the design. This marker is static evidence for validators and reviewers. Missing or weaker values are invalid for scaffolds that rely on live sub-agent reasoning.
 
+## v1.7.0 — Evidence-Locked DAG Execution Governance
+
+This contract prevents host-level linear fulfillment skills from bypassing the persisted `.codex-loop/` DAG after the user gives explicit GO authorization. It adds file-level evidence locks only; it does not add a daemon, scheduler process, queue, database, checkpoint service, or independent Runtime Engine.
+
+### GO-phase Scheduler Ownership Contract
+
+After explicit GO, and after `.codex-loop/` is written and `scripts/validate_codex_loop_scaffold.py` passes, scheduling authority belongs to the persisted DAG scaffold:
+
+- The `runtime_mode` marker MUST be `COOPERATIVE_GOVERNANCE`.
+- `loop_spec.execution_governance.runtime_mode` MUST be `COOPERATIVE_GOVERNANCE`.
+- `loop_spec.execution_governance.scheduler` MUST be `codex_loop_dag`.
+- `loop_spec.execution_governance.inline_execution_policy` MUST be `forbidden_for_subagent_nodes`.
+- `loop_spec.execution_governance.required_evidence` MUST require `activation`, `handoff`, and `completion` evidence.
+- `agent_manifest.governance_overlay.dag_scheduler_owner` MUST be `prompt-to-loop-engineering`.
+
+The main Codex host remains the permission-bearing executor, but it MUST advance work by reading the DAG, current `.status`, guardrails, sub-agent prompts, and evidence requirements before selecting the next stage. General planning or fulfillment skills may help inside an authorized node; they MUST NOT replace the DAG as the scheduler.
+
+### Inline Fulfillment Prohibition
+
+For any node bound to a declared sub-agent, Codex MUST NOT inline-fulfill the node from the main session and then pretend the DAG was followed. A sub-agent-governed node is complete only when the required evidence chain exists under `.codex-loop/evidence/`.
+
+Codex MUST NOT:
+
+- skip live sub-agent activation when the host supports it and the manifest requires it;
+- produce final task artifacts for sub-agent nodes without a matching `completion` evidence file;
+- route around `.codex-loop/loop_spec.json` by following a linear `planning -> executing` plugin flow;
+- let a specialized host skill take scheduler ownership after GO;
+- mark the run complete while `scripts/validate_dag_execution_evidence.py` fails.
+
+If host constraints prevent live activation or evidence creation, Codex MUST report the blocked condition, update `.codex-loop/.status`, and stop rather than performing inline execution.
+
+### Execution Evidence Contract
+
+Generated scaffolds that rely on live or role-separated sub-agents MUST include:
+
+```text
+.codex-loop/
+├── evidence/
+│   ├── activation/
+│   ├── handoff/
+│   └── completion/
+```
+
+`agent_manifest.governance_overlay.required_evidence_refs` is the canonical checklist of required evidence files. The governing field `required_evidence` declares which evidence classes are mandatory. Each listed file MUST be present before the host claims that the GO-phase DAG execution is valid.
+
+Evidence files are lightweight JSON stubs, not runtime state. They record only auditable lifecycle facts such as:
+
+- which node and sub-agent were activated;
+- which local prompt file supplied the System Prompt baseline;
+- whether `reasoning_intensity` was inherited as `extended_thought`;
+- which node handed off to which successor;
+- which node completed, blocked, or stopped;
+- whether inline fulfillment was avoided.
+
+For a sub-agent-governed node, `completion` evidence MUST include the expected `subagent_id` and `inline_fulfillment=false`. Missing `subagent_id`, `inline_fulfillment=true`, or a main-session-only completion marker is invalid.
+
+### Post-hoc Hard Validation
+
+After GO-phase work produces or updates evidence, Codex MUST run `scripts/validate_dag_execution_evidence.py` against the active scaffold:
+
+```bash
+python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
+```
+
+Inside this repository, use:
+
+```bash
+python scripts/validate_dag_execution_evidence.py examples/codex-loop
+```
+
+The validator performs Post-hoc Hard Validation. It checks `execution_governance`, `governance_overlay`, required evidence refs, activation records, model/reasoning inheritance records, handoff records, completion records, and inline-fulfillment violations. Codex MUST NOT report DAG execution as valid if this validator fails.
+
+### Node-scoped Atomic Capability Policy
+
+`linear_fulfillment_plugins` MUST declare the `scheduler_takeover` field as forbidden and allow only the `node_scoped_atomic_capability` role:
+
+```json
+{
+  "scheduler_takeover": "forbidden",
+  "allowed_role": "node_scoped_atomic_capability"
+}
+```
+
+Specialized host skills, built-in planning helpers, browser tools, research skills, code-generation skills, and superpowers-style utilities remain available only as node-scoped atomic capabilities when allowed by the current node, manifest, guardrails, and host permissions. They may provide local search, code editing, test execution, analysis, or formatting within a node. They MUST NOT become a second scheduler, hidden global memory controller, or replacement for `.codex-loop/` transition rules.
+
 ## Defensive Designing Principle
 
 When the user's prompt is structurally vague, underspecified, or operationally broad, Codex MUST enter defensive design mode. Vague input is not permission to improvise recklessly, and it is not permission to refuse construction.
@@ -270,6 +355,10 @@ Required layout:
 ├── subagents/
 │   ├── planner.md
 │   └── executor.md
+├── evidence/
+│   ├── activation/
+│   ├── handoff/
+│   └── completion/
 └── .status
 ```
 
@@ -285,6 +374,7 @@ Scaffold rules:
 - `agent_manifest.json` binds the main Codex agent to the LoopSpec, guardrails, tool bindings, knowledge bindings, sub-agent prompts, and resume policy.
 - `guardrails.json` stores forbidden commands, write boundaries, approval-required actions, and stop conditions.
 - `subagents/*.md` stores compact role prompts for Codex to read when a loop node requires that specialization.
+- `evidence/*/*.json` stores lightweight post-hoc lifecycle evidence for activation, handoff, and completion when GO-phase DAG execution has begun.
 - `.status` is optional and must contain only one current stage or node id. Do not create `state.json`, a database, queue, checkpoint store, or hidden Runtime Engine inside the Skill or scaffold.
 
 Codex is the host executor: on continuation, it MUST read `.codex-loop/agent_manifest.json`, `.codex-loop/loop_spec.json`, `.codex-loop/guardrails.json`, the relevant sub-agent prompt, and `.status` if present before taking action. Sub-agent use is allowed only when the manifest and `Loop_design_request.runtime_capabilities.subagents=true` permit it.
@@ -350,6 +440,14 @@ python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_codex_loop_sc
 ```
 
 Use the repository-relative script path instead when working inside this asset repository: `scripts/validate_codex_loop_scaffold.py`.
+
+After GO-phase execution produces or updates evidence, Codex MUST also run:
+
+```bash
+python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
+```
+
+Use the repository-relative script path instead when working inside this asset repository: `scripts/validate_dag_execution_evidence.py`.
 
 ## Procedure
 

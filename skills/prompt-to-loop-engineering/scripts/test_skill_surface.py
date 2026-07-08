@@ -54,6 +54,7 @@ class SkillSurfaceTests(unittest.TestCase):
             "schemas/guardrails.schema.json",
             "scripts/validate_design_result.py",
             "scripts/validate_codex_loop_scaffold.py",
+            "scripts/validate_dag_execution_evidence.py",
             "examples/one_shot.json",
             "examples/workflow.json",
             "examples/agent_loop.json",
@@ -69,6 +70,13 @@ class SkillSurfaceTests(unittest.TestCase):
             "examples/codex-loop/guardrails.json",
             "examples/codex-loop/subagents/planner.md",
             "examples/codex-loop/subagents/executor.md",
+            "examples/codex-loop/evidence/activation/planner.json",
+            "examples/codex-loop/evidence/activation/executor.json",
+            "examples/codex-loop/evidence/handoff/planner_to_executor.json",
+            "examples/codex-loop/evidence/handoff/executor_to_terminal_export.json",
+            "examples/codex-loop/evidence/completion/planner.json",
+            "examples/codex-loop/evidence/completion/executor.json",
+            "examples/codex-loop/evidence/completion/terminal_export.json",
         ]
         if (REPO_ROOT / "README.md").is_file():
             required.append("../../examples/agents-gate/AGENTS.md")
@@ -102,9 +110,9 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `1.6.0`", skill)
-        self.assertIn("### v1.6.0 (2026-07-06)", readme)
-        self.assertIn("### v1.6.0 (2026-07-06)", readme_cn)
+        self.assertIn("**Skill version:** `1.7.0`", skill)
+        self.assertIn("### v1.7.0 (2026-07-07)", readme)
+        self.assertIn("### v1.7.0 (2026-07-07)", readme_cn)
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -189,6 +197,29 @@ class SkillSurfaceTests(unittest.TestCase):
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing model inheritance phrases: {missing}")
 
+    def test_evidence_locked_dag_execution_governance_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "v1.7.0 — Evidence-Locked DAG Execution Governance",
+            "GO-phase Scheduler Ownership Contract",
+            "Inline Fulfillment Prohibition",
+            "Execution Evidence Contract",
+            "Post-hoc Hard Validation",
+            "Node-scoped Atomic Capability Policy",
+            "`runtime_mode`",
+            "`COOPERATIVE_GOVERNANCE`",
+            "`codex_loop_dag`",
+            "`forbidden_for_subagent_nodes`",
+            "`required_evidence`",
+            "`linear_fulfillment_plugins`",
+            "`scheduler_takeover`",
+            "`node_scoped_atomic_capability`",
+            "MUST NOT inline-fulfill",
+            "MUST run `scripts/validate_dag_execution_evidence.py`",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing evidence governance phrases: {missing}")
+
     def test_defensive_designing_fallback_contract_is_documented(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_phrases = [
@@ -231,6 +262,9 @@ class SkillSurfaceTests(unittest.TestCase):
                 "Model Configuration Inheritance Contract",
                 "required_subagent_reasoning_intensity",
                 "extended_thought",
+                "Evidence-Locked DAG Execution Governance",
+                "validate_dag_execution_evidence.py",
+                "inline execution",
             ]:
                 self.assertIn(phrase, content)
 
@@ -258,6 +292,49 @@ class SkillSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(
             required.get("required_subagent_reasoning_intensity"), "extended_thought"
+        )
+
+    def test_codex_loop_example_declares_evidence_locked_governance(self) -> None:
+        import json
+
+        loop_spec = json.loads(
+            (SKILL_ROOT / "examples" / "codex-loop" / "loop_spec.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        manifest = json.loads(
+            (SKILL_ROOT / "examples" / "codex-loop" / "agent_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        execution_governance = loop_spec["execution_governance"]
+        self.assertEqual(execution_governance["runtime_mode"], "COOPERATIVE_GOVERNANCE")
+        self.assertEqual(execution_governance["scheduler"], "codex_loop_dag")
+        self.assertEqual(
+            execution_governance["inline_execution_policy"],
+            "forbidden_for_subagent_nodes",
+        )
+        self.assertEqual(
+            execution_governance["linear_fulfillment_plugins"]["scheduler_takeover"],
+            "forbidden",
+        )
+        self.assertEqual(
+            execution_governance["linear_fulfillment_plugins"]["allowed_role"],
+            "node_scoped_atomic_capability",
+        )
+
+        overlay = manifest["governance_overlay"]
+        self.assertEqual(overlay["runtime_mode"], "COOPERATIVE_GOVERNANCE")
+        self.assertEqual(overlay["dag_scheduler_owner"], "prompt-to-loop-engineering")
+        self.assertEqual(overlay["host_linear_fulfillment_takeover"], "forbidden")
+        self.assertEqual(
+            overlay["specialized_skills_policy"],
+            "node_scoped_atomic_capabilities",
+        )
+        self.assertIn(
+            ".codex-loop/evidence/activation/planner.json",
+            overlay["required_evidence_refs"],
         )
 
     def test_example_subagent_prompts_request_reasoning_alignment(self) -> None:
@@ -354,6 +431,7 @@ class SkillSurfaceTests(unittest.TestCase):
         for phrase in [
             "python -B -m unittest discover",
             "validate_codex_loop_scaffold.py",
+            "validate_dag_execution_evidence.py",
             "test_spec_loading.py",
             "validate_design_result.py",
         ]:

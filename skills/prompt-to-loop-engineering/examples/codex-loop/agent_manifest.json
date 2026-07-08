@@ -3,7 +3,7 @@
   "manifest_id": "codex-native-feature-agent@1",
   "created_by_skill": {
     "name": "prompt-to-loop-engineering",
-    "version": "1.6.0"
+    "version": "1.7.0"
   },
   "codex_host": {
     "executor": "codex",
@@ -22,6 +22,23 @@
     "resume_entry_policy": "read_status_then_validate_stage"
   },
   "guardrails_ref": ".codex-loop/guardrails.json",
+  "governance_overlay": {
+    "runtime_mode": "COOPERATIVE_GOVERNANCE",
+    "dag_scheduler_owner": "prompt-to-loop-engineering",
+    "host_linear_fulfillment_takeover": "forbidden",
+    "specialized_skills_policy": "node_scoped_atomic_capabilities",
+    "evidence_root": ".codex-loop/evidence",
+    "post_hoc_validator": "validate_dag_execution_evidence.py",
+    "required_evidence_refs": [
+      ".codex-loop/evidence/activation/planner.json",
+      ".codex-loop/evidence/activation/executor.json",
+      ".codex-loop/evidence/handoff/planner_to_executor.json",
+      ".codex-loop/evidence/handoff/executor_to_terminal_export.json",
+      ".codex-loop/evidence/completion/planner.json",
+      ".codex-loop/evidence/completion/executor.json",
+      ".codex-loop/evidence/completion/terminal_export.json"
+    ]
+  },
   "subagents": [
     {
       "id": "planner",

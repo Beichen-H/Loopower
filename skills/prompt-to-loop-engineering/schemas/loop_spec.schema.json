@@ -10,6 +10,7 @@
     "task_contract_ref",
     "architecture",
     "runtime_binding",
+    "execution_governance",
     "state",
     "context",
     "control_flow",
@@ -89,6 +90,41 @@
         "capabilities_snapshot": { "$ref": "loop_design_request.schema.json#/properties/runtime_capabilities" },
         "required_capabilities": { "$ref": "loop_design_request.schema.json#/properties/runtime_capabilities" },
         "capability_mismatches": { "type": "array", "maxItems": 0 }
+      },
+      "additionalProperties": false
+    },
+    "execution_governance": {
+      "type": "object",
+      "required": [
+        "runtime_mode",
+        "scheduler",
+        "inline_execution_policy",
+        "required_evidence",
+        "linear_fulfillment_plugins"
+      ],
+      "properties": {
+        "runtime_mode": { "const": "COOPERATIVE_GOVERNANCE" },
+        "scheduler": { "const": "codex_loop_dag" },
+        "inline_execution_policy": { "const": "forbidden_for_subagent_nodes" },
+        "required_evidence": {
+          "type": "object",
+          "required": ["activation", "handoff", "completion"],
+          "properties": {
+            "activation": { "const": true },
+            "handoff": { "const": true },
+            "completion": { "const": true }
+          },
+          "additionalProperties": false
+        },
+        "linear_fulfillment_plugins": {
+          "type": "object",
+          "required": ["scheduler_takeover", "allowed_role"],
+          "properties": {
+            "scheduler_takeover": { "const": "forbidden" },
+            "allowed_role": { "const": "node_scoped_atomic_capability" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

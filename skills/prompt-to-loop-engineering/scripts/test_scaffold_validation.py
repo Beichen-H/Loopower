@@ -87,6 +87,40 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
                 result.stdout + result.stderr,
             )
 
+    def test_rejects_scaffold_without_evidence_governance(self) -> None:
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / ".codex-loop"
+            shutil.copytree(EXAMPLE, work)
+
+            spec_path = work / "loop_spec.json"
+            spec = json.loads(spec_path.read_text(encoding="utf-8"))
+            spec.pop("execution_governance", None)
+            spec_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+
+            result = self.run_validator(work)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("execution_governance", result.stdout + result.stderr)
+
+    def test_rejects_manifest_without_governance_overlay(self) -> None:
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / ".codex-loop"
+            shutil.copytree(EXAMPLE, work)
+
+            manifest_path = work / "agent_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest.pop("governance_overlay", None)
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+            result = self.run_validator(work)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("governance_overlay", result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
