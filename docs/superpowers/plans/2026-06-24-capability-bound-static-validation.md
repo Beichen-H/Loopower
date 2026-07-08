@@ -1,6 +1,6 @@
 # Capability-Bound Static Validation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Historical note for agentic workers:** This archived plan predates the current `$prompt-to-loop-engineering` workflow precedence contract. Do not treat it as a current requirement to invoke `superpowers:subagent-driven-development` or `superpowers:executing-plans`; when this skill is active, follow its mandatory execution protocol first. Steps use checkbox (`- [ ]`) syntax for historical tracking only.
 
 **Goal:** Make `prompt-to-loop-engineering` produce request-bound, KB v4.0.2-compliant static designs without containing or executing a Runtime Engine.
 

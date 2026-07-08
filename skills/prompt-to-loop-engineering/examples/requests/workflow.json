@@ -1,7 +1,14 @@
 {
   "request_id": "example-workflow-request",
   "task_prompt": "Design a fixed workflow that validates a configuration and formats it only when validation passes.",
-  "known_context": [],
+  "known_context": [
+    {
+      "kind": "subagent_discovery",
+      "method": "tool_search",
+      "queries": ["spawn_agent", "spawn_subagent", "subagent", "multi_agent"],
+      "result": "no_host_native_lifecycle_tool_found"
+    }
+  ],
   "runtime_capabilities": {
     "available_tools": [],
     "durable_state": false,

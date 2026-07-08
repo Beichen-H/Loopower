@@ -30,7 +30,36 @@ CAPABILITY_FLAGS = (
     "parallel_execution",
     "subagents",
 )
-CAPABILITY_KEYS = {"available_tools", *CAPABILITY_FLAGS}
+REQUIRED_SUBAGENT_REASONING_INTENSITY = "extended_thought"
+CAPABILITY_KEYS = {
+    "available_tools",
+    "required_subagent_reasoning_intensity",
+    *CAPABILITY_FLAGS,
+}
+HOST_NATIVE_SUBAGENT_TOOL_TERMS = (
+    "spawn_subagent",
+    "spawn_agent",
+    "multi_agent_v1.spawn_agent",
+    "multi_agent.spawn_agent",
+)
+SUBAGENT_DISCOVERY_QUERY_TERMS = (
+    "spawn_subagent",
+    "spawn_agent",
+    "subagent",
+    "sub-agent",
+    "multi_agent",
+    "multi-agent",
+)
+SUBAGENT_DISCOVERY_FAILURE_TERMS = (
+    "no_host_native_lifecycle_tool_found",
+    "no host-native lifecycle tool",
+    "no host native lifecycle tool",
+    "not found",
+    "unavailable",
+    "absent",
+    "none found",
+    "no callable",
+)
 NODE_KINDS = {
     "deterministic",
     "model",
@@ -146,7 +175,58 @@ def _string_list(value: Any, path: str, *, non_empty: bool = False) -> list[str]
     return values
 
 
-def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _evidence_blob(values: list[Any]) -> str:
+    chunks: list[str] = []
+    for value in values:
+        if isinstance(value, str):
+            chunks.append(value)
+        else:
+            chunks.append(json.dumps(value, sort_keys=True, ensure_ascii=False))
+    return "\n".join(chunks).lower()
+
+
+def _has_failed_subagent_discovery_evidence(*evidence_sets: list[Any]) -> bool:
+    blob = _evidence_blob([item for evidence in evidence_sets for item in evidence])
+    return (
+        "tool_search" in blob
+        and any(term in blob for term in SUBAGENT_DISCOVERY_QUERY_TERMS)
+        and any(term in blob for term in SUBAGENT_DISCOVERY_FAILURE_TERMS)
+    )
+
+
+def _is_host_native_subagent_tool(tool_name: str) -> bool:
+    normalized = tool_name.lower().replace("-", "_")
+    return any(term in normalized for term in HOST_NATIVE_SUBAGENT_TOOL_TERMS)
+
+
+def _validate_subagent_discovery(
+    capabilities: dict[str, Any],
+    known_context: list[Any],
+    assumptions: list[Any],
+    validation_assumptions: list[Any],
+) -> None:
+    declared_lifecycle_tools = [
+        tool for tool in capabilities["available_tools"] if _is_host_native_subagent_tool(tool)
+    ]
+    _require(
+        not declared_lifecycle_tools or capabilities["subagents"],
+        "runtime_capabilities.subagents must be true when available_tools exposes "
+        f"host-native sub-agent lifecycle tools: {declared_lifecycle_tools}",
+    )
+    if not capabilities["subagents"]:
+        _require(
+            _has_failed_subagent_discovery_evidence(
+                known_context,
+                assumptions,
+                validation_assumptions,
+            ),
+            "runtime_capabilities.subagents=false requires tool_search evidence that "
+            "spawn_agent/spawn_subagent/subagent/multi_agent discovery was attempted "
+            "and no host-native lifecycle tool was available",
+        )
+
+
+def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], list[Any]]:
     value = _object(request, "Loop_design_request")
     _require_keys(
         value,
@@ -163,7 +243,7 @@ def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str
     )
     _non_empty_string(value["request_id"], "Loop_design_request.request_id")
     _non_empty_string(value["task_prompt"], "Loop_design_request.task_prompt")
-    _list(value["known_context"], "Loop_design_request.known_context")
+    known_context = _list(value["known_context"], "Loop_design_request.known_context")
     _object(value["budget_envelope"], "Loop_design_request.budget_envelope")
     _object(value["output_requirements"], "Loop_design_request.output_requirements")
 
@@ -176,18 +256,33 @@ def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str
         flag_value = raw.get(flag, False)
         _require(type(flag_value) is bool, f"runtime_capabilities.{flag} must be boolean")
         capabilities[flag] = flag_value
+    intensity = raw.get("required_subagent_reasoning_intensity", None)
+    _require(
+        intensity in (None, REQUIRED_SUBAGENT_REASONING_INTENSITY),
+        "runtime_capabilities.required_subagent_reasoning_intensity must be null or "
+        f"{REQUIRED_SUBAGENT_REASONING_INTENSITY!r}",
+    )
+    if "required_subagent_reasoning_intensity" in raw:
+        capabilities["required_subagent_reasoning_intensity"] = intensity
+    if capabilities["subagents"]:
+        _require(
+            capabilities.get("required_subagent_reasoning_intensity")
+            == REQUIRED_SUBAGENT_REASONING_INTENSITY,
+            "runtime_capabilities.required_subagent_reasoning_intensity must be "
+            f"{REQUIRED_SUBAGENT_REASONING_INTENSITY!r} when subagents=true",
+        )
 
     policy = _object(value["policy_constraints"], "Loop_design_request.policy_constraints")
     _require_keys(policy, {"allowed_side_effects", "forbidden_actions", "approval_rules"}, "policy_constraints")
     for key in ("allowed_side_effects", "forbidden_actions", "approval_rules"):
         _list(policy[key], f"policy_constraints.{key}")
-    return capabilities, policy
+    return capabilities, policy, known_context
 
 
 def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> None:
     """Validate one static build result against its declared runtime request."""
 
-    capabilities, policy = _validate_request(request)
+    capabilities, policy, known_context = _validate_request(request)
     result = _object(payload, "loop_design_result")
     _require_keys(
         result,
@@ -210,7 +305,7 @@ def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> 
     criterion_ids, mandatory_ids = _validate_task_contract(
         _object(result["task_contract"], "task_contract")
     )
-    _list(result["assumptions"], "assumptions")
+    assumptions = _list(result["assumptions"], "assumptions")
     missing_inputs = _list(result["missing_inputs"], "missing_inputs")
     _list(result["rejected_alternatives"], "rejected_alternatives")
 
@@ -219,7 +314,13 @@ def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> 
     _require(type(validation_report["valid"]) is bool, "validation_report.valid must be boolean")
     errors = _list(validation_report["errors"], "validation_report.errors")
     _list(validation_report["warnings"], "validation_report.warnings")
-    _list(validation_report["assumptions"], "validation_report.assumptions")
+    validation_assumptions = _list(validation_report["assumptions"], "validation_report.assumptions")
+    _validate_subagent_discovery(
+        capabilities,
+        known_context,
+        assumptions,
+        validation_assumptions,
+    )
 
     build_report = _object(result["build_report"], "build_report")
     _require_keys(
@@ -385,6 +486,18 @@ def _validate_loop_spec(
         requested = required_capabilities.get(flag, False)
         _require(type(requested) is bool, f"required_capabilities.{flag} must be boolean")
         _require(not requested or capabilities[flag], f"required capability {flag} is unavailable")
+    required_intensity = required_capabilities.get("required_subagent_reasoning_intensity", None)
+    _require(
+        required_intensity in (None, REQUIRED_SUBAGENT_REASONING_INTENSITY),
+        "required_capabilities.required_subagent_reasoning_intensity must be null or "
+        f"{REQUIRED_SUBAGENT_REASONING_INTENSITY!r}",
+    )
+    if required_capabilities.get("subagents", False):
+        _require(
+            required_intensity == REQUIRED_SUBAGENT_REASONING_INTENSITY,
+            "required_capabilities.required_subagent_reasoning_intensity must be "
+            f"{REQUIRED_SUBAGENT_REASONING_INTENSITY!r} when subagents are required",
+        )
     mismatches = _list(binding.get("capability_mismatches"), "runtime_binding.capability_mismatches")
     _require(not mismatches, "spec_ready loop_spec cannot contain capability_mismatches")
 

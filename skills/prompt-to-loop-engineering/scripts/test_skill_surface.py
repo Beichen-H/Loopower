@@ -102,9 +102,9 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `1.6.0`", skill)
-        self.assertIn("### v1.6.0 (2026-07-06)", readme)
-        self.assertIn("### v1.6.0 (2026-07-06)", readme_cn)
+        self.assertIn("**Skill version:** `1.6.1`", skill)
+        self.assertIn("### v1.6.1 (2026-07-08)", readme)
+        self.assertIn("### v1.6.1 (2026-07-08)", readme_cn)
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -158,6 +158,9 @@ class SkillSurfaceTests(unittest.TestCase):
             "Host-resolved Atomic Capability Contract",
             "MUST NOT be modeled as directly callable functions",
             "Cooperative Skill Dispatch Rule",
+            "Workflow Precedence and Plan-Skill Compatibility",
+            "superpowers:executing-plans",
+            "cannot override this Skill's mandatory execution protocol",
             "Five Governance Variables",
             "`task_classification`",
             "`capability_snapshot`",
@@ -170,6 +173,21 @@ class SkillSurfaceTests(unittest.TestCase):
         ]
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing cooperative overlay phrases: {missing}")
+
+    def test_subagent_capability_discovery_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "MUST discover host-native sub-agent lifecycle capability with `tool_search`",
+            "Before normalizing `runtime_capabilities`",
+            "`spawn_agent`",
+            "`spawn_subagent`",
+            "`subagent`",
+            "`multi_agent`",
+            "Only set `runtime_capabilities.subagents=false`",
+            "no_host_native_lifecycle_tool_found",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing subagent discovery phrases: {missing}")
 
     def test_model_configuration_inheritance_contract_is_documented(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -285,6 +303,9 @@ class SkillSurfaceTests(unittest.TestCase):
             "Non-trivial",
             "Lineup Recommendation",
             "Loop Boundary",
+            "Capability Snapshot",
+            "call `tool_search` for `spawn_agent`, `spawn_subagent`, `subagent`, and `multi_agent`",
+            "MUST NOT write `subagents=false`",
             "STOP — Waiting for user approval",
             "explicit user approval",
             "$prompt-to-loop-engineering",

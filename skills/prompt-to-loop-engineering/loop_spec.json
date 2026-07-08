@@ -120,7 +120,7 @@
   },
   "runtime_binding": {
     "capabilities_snapshot": {
-      "available_tools": [],
+      "available_tools": ["tool_search"],
       "durable_state": false,
       "checkpoint_resume": false,
       "sandbox": false,
@@ -128,7 +128,9 @@
       "parallel_execution": false,
       "subagents": false
     },
-    "required_capabilities": {},
+    "required_capabilities": {
+      "available_tools": ["tool_search"]
+    },
     "capability_mismatches": []
   },
   "state": {
@@ -198,7 +200,7 @@
       {
         "id": "workspace_preflight",
         "kind": "deterministic",
-        "objective": "Normalize the request and bind real runtime capability, policy, budget, output, and provenance constraints.",
+        "objective": "Discover host-native sub-agent lifecycle tools with tool_search, then normalize the request and bind real runtime capability, policy, budget, output, and provenance constraints.",
         "supports_acceptance_criteria": [
           "AC-1",
           "AC-2"
@@ -213,7 +215,7 @@
             "policy_status"
           ]
         },
-        "allowed_tools": [],
+        "allowed_tools": ["tool_search"],
         "state_read_scope": [
           "request"
         ],
@@ -477,7 +479,13 @@
     "fallback_node": "terminal_export"
   },
   "tools": {
-    "contracts": [],
+    "contracts": [
+      {
+        "id": "tool_search",
+        "controller_executes": true,
+        "side_effect": "none"
+      }
+    ],
     "rollback_procedures": [],
     "permission_bindings": [],
     "side_effect_policies": [

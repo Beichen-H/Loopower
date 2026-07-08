@@ -1,7 +1,14 @@
 {
   "request_id": "example-unsupported-request",
   "task_prompt": "Design a resumable workflow that survives process restart by loading a durable checkpoint.",
-  "known_context": [],
+  "known_context": [
+    {
+      "kind": "subagent_discovery",
+      "method": "tool_search",
+      "queries": ["spawn_agent", "spawn_subagent", "subagent", "multi_agent"],
+      "result": "no_host_native_lifecycle_tool_found"
+    }
+  ],
   "runtime_capabilities": {
     "available_tools": [],
     "durable_state": false,
