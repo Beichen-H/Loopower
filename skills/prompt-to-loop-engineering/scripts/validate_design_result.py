@@ -30,7 +30,8 @@ CAPABILITY_FLAGS = (
     "parallel_execution",
     "subagents",
 )
-CAPABILITY_KEYS = {"available_tools", *CAPABILITY_FLAGS}
+SUBAGENT_REASONING_KEY = "required_subagent_reasoning_intensity"
+CAPABILITY_KEYS = {"available_tools", SUBAGENT_REASONING_KEY, *CAPABILITY_FLAGS}
 NODE_KINDS = {
     "deterministic",
     "model",
@@ -176,6 +177,18 @@ def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str
         flag_value = raw.get(flag, False)
         _require(type(flag_value) is bool, f"runtime_capabilities.{flag} must be boolean")
         capabilities[flag] = flag_value
+    if SUBAGENT_REASONING_KEY in raw:
+        reasoning_intensity = raw[SUBAGENT_REASONING_KEY]
+        _require(
+            reasoning_intensity in {None, "extended_thought"},
+            f"runtime_capabilities.{SUBAGENT_REASONING_KEY} must be extended_thought or null",
+        )
+        capabilities[SUBAGENT_REASONING_KEY] = reasoning_intensity
+    _require(
+        not capabilities["subagents"]
+        or capabilities.get(SUBAGENT_REASONING_KEY) == "extended_thought",
+        f"runtime_capabilities.{SUBAGENT_REASONING_KEY} must be extended_thought when subagents=true",
+    )
 
     policy = _object(value["policy_constraints"], "Loop_design_request.policy_constraints")
     _require_keys(policy, {"allowed_side_effects", "forbidden_actions", "approval_rules"}, "policy_constraints")
@@ -385,6 +398,17 @@ def _validate_loop_spec(
         requested = required_capabilities.get(flag, False)
         _require(type(requested) is bool, f"required_capabilities.{flag} must be boolean")
         _require(not requested or capabilities[flag], f"required capability {flag} is unavailable")
+    if SUBAGENT_REASONING_KEY in required_capabilities:
+        requested_reasoning = required_capabilities[SUBAGENT_REASONING_KEY]
+        _require(
+            requested_reasoning in {None, "extended_thought"},
+            f"required_capabilities.{SUBAGENT_REASONING_KEY} must be extended_thought or null",
+        )
+        _require(
+            requested_reasoning is None
+            or requested_reasoning == capabilities.get(SUBAGENT_REASONING_KEY),
+            f"required capability {SUBAGENT_REASONING_KEY} is unavailable",
+        )
     mismatches = _list(binding.get("capability_mismatches"), "runtime_binding.capability_mismatches")
     _require(not mismatches, "spec_ready loop_spec cannot contain capability_mismatches")
 
@@ -753,6 +777,19 @@ def _validate_capability_usage(
         or bool(spec["delegation"].get("worker_profiles"))
     )
     _require(not worker_used or capabilities["subagents"], "subagents capability is required by worker/delegation design")
+    _require(
+        not worker_used
+        or capabilities.get(SUBAGENT_REASONING_KEY) == "extended_thought",
+        f"{SUBAGENT_REASONING_KEY}=extended_thought is required by worker/delegation design",
+    )
+    _require(
+        not worker_used
+        or spec["runtime_binding"]["required_capabilities"].get(
+            SUBAGENT_REASONING_KEY
+        )
+        == "extended_thought",
+        f"required_capabilities.{SUBAGENT_REASONING_KEY} must be extended_thought when subagents are required",
+    )
     sandbox_used = spec["runtime_binding"]["required_capabilities"].get("sandbox", False)
     _require(not sandbox_used or capabilities["sandbox"], "sandbox capability is required by the design")
 
