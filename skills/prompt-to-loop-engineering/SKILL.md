@@ -5,7 +5,7 @@ description: Use when a natural-language task must be converted into a role-neut
 
 # Prompt to Loop Engineering
 
-**Skill version:** `1.7.0`
+**Skill version:** `1.8.0`
 **Normative contract:** Loop Engineering KB `v4.0.2`
 **Self-design graph:** [`loop_spec.json`](loop_spec.json)
 
@@ -167,6 +167,40 @@ Every generated `agent_loop` scaffold that declares `runtime_binding.capabilitie
 ```
 
 The same value MUST appear in `runtime_binding.required_capabilities.required_subagent_reasoning_intensity` when sub-agents are required for the design. This marker is static evidence for validators and reviewers. Missing or weaker values are invalid for scaffolds that rely on live sub-agent reasoning.
+
+## v1.8.0 — Evidence-Locked & Role-Isolated Governance
+
+This layer preserves v1.7.0 evidence locking and adds hard loop brakes plus role isolation.
+
+### Four Hard Limits
+
+Every `Loop_design_request.budget_envelope` MUST declare:
+
+- `max_runtime_seconds`
+- `max_iterations`
+- `max_token_budget`
+- `max_no_progress_loops`
+
+Every `agent_loop` LoopSpec MUST mirror those four limits in `threshold_register` with matching numeric values. Missing or mismatched hard limits are invalid.
+
+### No-Progress Deterministic Contract
+
+Every generated cycle MUST include at least one deterministic physical progress fact in `progress_signals`:
+
+- `state.diff_fingerprint`
+- `state.test_count`
+- `state.artifact_hash`
+- `state.new_evidence_count`
+
+Semantic self-reports, confidence scores, or vague quality judgments are not sufficient. After GO-phase work begins, Codex MUST use `validate_loop_progress_evidence.py` to reject repeated progress samples where `artifact_hash`, `diff_fingerprint`, and `test_count` remain unchanged while `new_evidence_count == 0` for more than `max_no_progress_loops`.
+
+### Implementer/Reviewer Isolation
+
+Control-flow nodes MUST declare a `role`: `planner`, `implementer`, `reviewer`, `verifier`, or `terminal`.
+
+If any node has role `implementer`, the graph MUST contain at least one `reviewer` or `verifier` node; in plain terms, every implementer requires a reviewer or verifier. An implementer MUST NOT verify mandatory acceptance criteria. Mandatory `evaluation.criteria_bindings` MUST declare `evaluator_node`, and that node MUST NOT be an implementer.
+
+Reviewer or verifier nodes MUST remain read-only for worktree content. Their `allowed_tools` MUST NOT include `edit_files`, `write_files`, `apply_patch`, or equivalent write-capable tools.
 
 ## v1.7.0 — Evidence-Locked DAG Execution Governance
 

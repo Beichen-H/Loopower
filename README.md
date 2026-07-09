@@ -2,7 +2,7 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.7.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, Cooperative Governance Overlay, Model Configuration Inheritance Contract, and Evidence-Locked DAG Execution Governance layer. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, host-native live sub-agent activation, sub-agent reasoning intensity alignment, and post-hoc evidence validation without taking exclusive control of the session.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.8.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, Cooperative Governance Overlay, Model Configuration Inheritance Contract, Evidence-Locked DAG Execution Governance layer, and Role-Isolated Governance contract. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, host-native live sub-agent activation, sub-agent reasoning intensity alignment, role-isolated verification, and post-hoc evidence validation without taking exclusive control of the session.
 
 This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
 
@@ -326,6 +326,14 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v1.8.0 (2026-07-09)
+
+- Added `Evidence-Locked & Role-Isolated Governance`.
+- Required four hard loop limits: `max_runtime_seconds`, `max_iterations`, `max_token_budget`, and `max_no_progress_loops`.
+- Added node role metadata and implementer/reviewer isolation validation.
+- Added deterministic no-progress progress-signal requirements.
+- Added `scripts/validate_loop_progress_evidence.py` for post-hoc stalled-loop detection.
 
 ### v1.7.0 (2026-07-07)
 

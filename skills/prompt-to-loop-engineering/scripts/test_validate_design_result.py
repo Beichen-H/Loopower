@@ -255,6 +255,71 @@ class DesignResultValidationTests(unittest.TestCase):
 
         validate_design_result(payload, request)
 
+    def test_rejects_agent_loop_without_four_hard_limits(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["budget_envelope"].pop("max_no_progress_loops", None)
+
+        with self.assertRaisesRegex(DesignValidationError, "max_no_progress_loops"):
+            validate_design_result(payload, request)
+
+    def test_rejects_agent_loop_without_deterministic_progress_fact(self) -> None:
+        payload = load_example("agent_loop.json")
+        payload["loop_spec"]["control_flow"]["cycles"][0]["progress_signals"] = [
+            {
+                "fact": "state.semantic_confidence",
+                "operator": "changes",
+                "evidence_ref": "model_self_report",
+            }
+        ]
+
+        with self.assertRaisesRegex(DesignValidationError, "deterministic progress"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_implementer_without_reviewer_or_verifier(self) -> None:
+        payload = load_example("agent_loop.json")
+        nodes = payload["loop_spec"]["control_flow"]["nodes"]
+        for node in nodes:
+            if node["id"] == "observe_evidence":
+                node["role"] = "planner"
+            elif node["id"] == "choose_next_action":
+                node["role"] = "implementer"
+        with self.assertRaisesRegex(DesignValidationError, "reviewer or verifier"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_reviewer_with_write_tools(self) -> None:
+        payload = load_example("agent_loop.json")
+        for node in payload["loop_spec"]["control_flow"]["nodes"]:
+            if node["id"] == "observe_evidence":
+                node["role"] = "reviewer"
+                node["allowed_tools"] = ["edit_files"]
+        payload["loop_spec"]["tools"]["contracts"].append(
+            {"id": "edit_files", "side_effect": "workspace_write", "controller_executes": True}
+        )
+        request = load_request("agent_loop.json")
+        request["runtime_capabilities"]["available_tools"].append("edit_files")
+        request["policy_constraints"]["allowed_side_effects"].append("workspace_write")
+        payload["loop_spec"]["runtime_binding"]["capabilities_snapshot"] = copy.deepcopy(
+            request["runtime_capabilities"]
+        )
+
+        with self.assertRaisesRegex(DesignValidationError, "read-only"):
+            validate_design_result(payload, request)
+
+    def test_rejects_implementer_as_mandatory_evaluator(self) -> None:
+        payload = load_example("agent_loop.json")
+        for node in payload["loop_spec"]["control_flow"]["nodes"]:
+            if node["id"] == "observe_evidence":
+                node["role"] = "reviewer"
+            elif node["id"] == "choose_next_action":
+                node["role"] = "implementer"
+        payload["loop_spec"]["evaluation"]["criteria_bindings"][0][
+            "evaluator_node"
+        ] = "choose_next_action"
+
+        with self.assertRaisesRegex(DesignValidationError, "implementer"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,7 +2,7 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.7.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge、Cooperative Governance Overlay、Model Configuration Inheritance Contract 与 Evidence-Locked DAG Execution Governance。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期、宿主原生 live sub-agent 激活、子智能体推理强度对齐与 post-hoc evidence validation。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.8.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge、Cooperative Governance Overlay、Model Configuration Inheritance Contract、Evidence-Locked DAG Execution Governance 与 Role-Isolated Governance。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期、宿主原生 live sub-agent 激活、子智能体推理强度对齐、角色隔离验证与 post-hoc evidence validation。
 
 本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
 
@@ -326,6 +326,14 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v1.8.0 (2026-07-09)
+
+- 增加 `Evidence-Locked & Role-Isolated Governance`。
+- 强制四个循环硬上限：`max_runtime_seconds`、`max_iterations`、`max_token_budget` 和 `max_no_progress_loops`。
+- 增加 node role metadata 与 implementer/reviewer isolation validation。
+- 增加 deterministic no-progress progress-signal 要求。
+- 增加 `scripts/validate_loop_progress_evidence.py`，用于 post-hoc stalled-loop detection。
 
 ### v1.7.0 (2026-07-07)
 

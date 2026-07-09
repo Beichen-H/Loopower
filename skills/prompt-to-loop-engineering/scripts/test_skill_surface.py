@@ -55,6 +55,7 @@ class SkillSurfaceTests(unittest.TestCase):
             "scripts/validate_design_result.py",
             "scripts/validate_codex_loop_scaffold.py",
             "scripts/validate_dag_execution_evidence.py",
+            "scripts/validate_loop_progress_evidence.py",
             "examples/one_shot.json",
             "examples/workflow.json",
             "examples/agent_loop.json",
@@ -77,6 +78,8 @@ class SkillSurfaceTests(unittest.TestCase):
             "examples/codex-loop/evidence/completion/planner.json",
             "examples/codex-loop/evidence/completion/executor.json",
             "examples/codex-loop/evidence/completion/terminal_export.json",
+            "examples/codex-loop/evidence/progress/iteration_1.json",
+            "examples/codex-loop/evidence/progress/iteration_2.json",
         ]
         if (REPO_ROOT / "README.md").is_file():
             required.append("../../examples/agents-gate/AGENTS.md")
@@ -110,9 +113,9 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `1.7.0`", skill)
-        self.assertIn("### v1.7.0 (2026-07-07)", readme)
-        self.assertIn("### v1.7.0 (2026-07-07)", readme_cn)
+        self.assertIn("**Skill version:** `1.8.0`", skill)
+        self.assertIn("### v1.8.0 (2026-07-09)", readme)
+        self.assertIn("### v1.8.0 (2026-07-09)", readme_cn)
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -242,6 +245,29 @@ class SkillSurfaceTests(unittest.TestCase):
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing precedence/discovery phrases: {missing}")
 
+    def test_role_isolated_governance_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "v1.8.0 — Evidence-Locked & Role-Isolated Governance",
+            "Four Hard Limits",
+            "`max_runtime_seconds`",
+            "`max_iterations`",
+            "`max_token_budget`",
+            "`max_no_progress_loops`",
+            "No-Progress Deterministic Contract",
+            "`state.diff_fingerprint`",
+            "`state.test_count`",
+            "`state.artifact_hash`",
+            "`state.new_evidence_count`",
+            "Implementer/Reviewer Isolation",
+            "implementer MUST NOT verify mandatory acceptance criteria",
+            "reviewer or verifier",
+            "MUST remain read-only",
+            "validate_loop_progress_evidence.py",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing v1.8 governance phrases: {missing}")
+
     def test_defensive_designing_fallback_contract_is_documented(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_phrases = [
@@ -286,6 +312,7 @@ class SkillSurfaceTests(unittest.TestCase):
                 "extended_thought",
                 "Evidence-Locked DAG Execution Governance",
                 "validate_dag_execution_evidence.py",
+                "validate_loop_progress_evidence.py",
                 "inline execution",
             ]:
                 self.assertIn(phrase, content)

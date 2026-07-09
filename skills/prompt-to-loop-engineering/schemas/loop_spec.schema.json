@@ -185,7 +185,16 @@
     },
     "transition_policy": { "type": "object" },
     "tools": { "type": "object" },
-    "evaluation": { "type": "object" },
+    "evaluation": {
+      "type": "object",
+      "properties": {
+        "criteria_bindings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/criteria_binding" }
+        }
+      },
+      "additionalProperties": true
+    },
     "termination": { "type": "object" },
     "policy_registry": { "type": "object" },
     "policies": { "type": "object" },
@@ -216,6 +225,7 @@
       "required": [
         "id",
         "kind",
+        "role",
         "objective",
         "input_schema",
         "output_schema",
@@ -235,6 +245,9 @@
             "merge",
             "terminal"
           ]
+        },
+        "role": {
+          "enum": ["planner", "implementer", "reviewer", "verifier", "terminal"]
         },
         "objective": { "type": "string", "minLength": 1 },
         "supports_acceptance_criteria": { "type": "array" },
@@ -262,6 +275,16 @@
         "tie_breaker": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
+    },
+    "criteria_binding": {
+      "type": "object",
+      "required": ["criterion_id", "evaluator_ref"],
+      "properties": {
+        "criterion_id": { "type": "string", "minLength": 1 },
+        "evaluator_ref": { "type": "string", "minLength": 1 },
+        "evaluator_node": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
     },
     "cycle": {
       "type": "object",

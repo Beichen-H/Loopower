@@ -22,6 +22,11 @@
     "forbidden_actions": [],
     "approval_rules": []
   },
-  "budget_envelope": {},
+  "budget_envelope": {
+    "max_runtime_seconds": 600,
+    "max_iterations": 1,
+    "max_token_budget": 40000,
+    "max_no_progress_loops": 1
+  },
   "output_requirements": {"format": "application/json"}
 }

@@ -27,6 +27,9 @@ jobs:
       - name: Validate DAG execution evidence
         run: python -B skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py skills/prompt-to-loop-engineering/examples/codex-loop
 
+      - name: Validate loop progress evidence
+        run: python -B skills/prompt-to-loop-engineering/scripts/validate_loop_progress_evidence.py skills/prompt-to-loop-engineering/examples/codex-loop
+
       - name: Validate skill DAG
         run: python -B skills/prompt-to-loop-engineering/scripts/test_spec_loading.py
 

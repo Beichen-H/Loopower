@@ -22,6 +22,13 @@
     "forbidden_actions": ["modify observed system"],
     "approval_rules": []
   },
-  "budget_envelope": {"max_observations": 4, "max_model_calls": 4},
+  "budget_envelope": {
+    "max_observations": 4,
+    "max_model_calls": 4,
+    "max_runtime_seconds": 900,
+    "max_iterations": 4,
+    "max_token_budget": 120000,
+    "max_no_progress_loops": 1
+  },
   "output_requirements": {"format": "application/json"}
 }

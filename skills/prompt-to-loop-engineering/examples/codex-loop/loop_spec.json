@@ -52,6 +52,10 @@
       "plan_ready": "boolean",
       "implementation_ready": "boolean",
       "validation_passed": "boolean",
+      "diff_fingerprint": "string",
+      "test_count": "integer",
+      "artifact_hash": "string",
+      "new_evidence_count": "integer",
       "budget_remaining": "integer"
     },
     "initial_state": {
@@ -59,12 +63,16 @@
       "plan_ready": false,
       "implementation_ready": false,
       "validation_passed": false,
+      "diff_fingerprint": "",
+      "test_count": 0,
+      "artifact_hash": "",
+      "new_evidence_count": 0,
       "budget_remaining": 5
     },
     "persistence": "status_file",
     "state_version": 1,
     "reducers": [],
-    "controller_owned_fields": ["current_stage", "validation_passed", "budget_remaining"],
+    "controller_owned_fields": ["current_stage", "validation_passed", "budget_remaining", "diff_fingerprint", "test_count", "artifact_hash", "new_evidence_count"],
     "write_conflict_policy": "single-writer-per-field"
   },
   "control_flow": {
@@ -75,9 +83,9 @@
       "equal_priority": "require_explicit_tie_breaker"
     },
     "nodes": [
-      {"id": "planner", "kind": "model", "objective": "Read the project context and produce a bounded implementation plan.", "allowed_tools": ["read_files"]},
-      {"id": "executor", "kind": "model", "objective": "Apply the approved plan inside the declared write boundaries.", "allowed_tools": ["read_files", "edit_files", "run_tests"]},
-      {"id": "terminal_export", "kind": "terminal", "objective": "Export completion, blocked, or stopped status with validation evidence.", "allowed_tools": []}
+      {"id": "planner", "kind": "model", "role": "planner", "objective": "Read the project context and produce a bounded implementation plan.", "allowed_tools": ["read_files"]},
+      {"id": "executor", "kind": "model", "role": "implementer", "objective": "Apply the approved plan inside the declared write boundaries.", "allowed_tools": ["read_files", "edit_files", "run_tests"]},
+      {"id": "terminal_export", "kind": "terminal", "role": "verifier", "objective": "Export completion, blocked, or stopped status with validation evidence.", "allowed_tools": []}
     ],
     "edges": [
       {"from": "planner", "to": "executor", "condition": {"all": [{"fact": "state.plan_ready", "operator": "eq", "value": true}]}, "priority": 10},
@@ -89,7 +97,8 @@
         "id": "bounded_plan_execute_cycle",
         "node_ids": ["planner", "executor"],
         "progress_signals": [
-          {"fact": "state.implementation_ready", "operator": "changes", "evidence_ref": "test_or_diff_evidence"}
+          {"fact": "state.implementation_ready", "operator": "changes", "evidence_ref": "test_or_diff_evidence"},
+          {"fact": "state.diff_fingerprint", "operator": "changes", "evidence_ref": "progress_fingerprint"}
         ],
         "stagnation_policy_ref": "no_new_diff_after_two_cycles",
         "budget_policy_ref": "loop_iteration_budget",
@@ -100,5 +109,11 @@
       }
     ],
     "terminal_nodes": {"passed": ["terminal_export"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["terminal_export"], "cancelled": []}
-  }
+  },
+  "threshold_register": [
+    {"id": "max_runtime_seconds", "value": 900, "unit": "seconds", "source": "defensive_default", "rationale": "Hard wall-clock stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "runtime budget changes"},
+    {"id": "max_iterations", "value": 3, "unit": "iterations", "source": "defensive_default", "rationale": "Hard iteration stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "iteration budget changes"},
+    {"id": "max_token_budget", "value": 120000, "unit": "tokens", "source": "defensive_default", "rationale": "Hard token budget stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "token budget changes"},
+    {"id": "max_no_progress_loops", "value": 1, "unit": "loops", "source": "defensive_default", "rationale": "Stop when consecutive progress fingerprints show no material change.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "stagnation tolerance changes"}
+  ]
 }

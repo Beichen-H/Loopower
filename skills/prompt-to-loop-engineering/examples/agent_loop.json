@@ -33,12 +33,12 @@
       "capability_mismatches": []
     },
     "state": {
-      "schema": {"observations": "array", "diagnosis": "object|null", "acceptance_passed": "boolean", "budget_remaining": "integer", "progress_detected": "boolean", "latest_observation_valid": "boolean"},
-      "initial_state": {"observations": [], "diagnosis": null, "acceptance_passed": false, "budget_remaining": 4, "progress_detected": true, "latest_observation_valid": false},
+      "schema": {"observations": "array", "diagnosis": "object|null", "acceptance_passed": "boolean", "budget_remaining": "integer", "progress_detected": "boolean", "latest_observation_valid": "boolean", "new_evidence_count": "integer"},
+      "initial_state": {"observations": [], "diagnosis": null, "acceptance_passed": false, "budget_remaining": 4, "progress_detected": true, "latest_observation_valid": false, "new_evidence_count": 0},
       "persistence": "memory",
       "state_version": 1,
       "reducers": [],
-      "controller_owned_fields": ["acceptance_passed", "budget_remaining", "progress_detected", "latest_observation_valid"],
+      "controller_owned_fields": ["acceptance_passed", "budget_remaining", "progress_detected", "latest_observation_valid", "new_evidence_count"],
       "write_conflict_policy": "single-writer-per-field"
     },
     "context": {
@@ -53,10 +53,10 @@
       "entry_node": "observe_evidence",
       "edge_selection_policy": {"priority_order": "lower_first", "match_policy": "first_match", "equal_priority": "require_explicit_tie_breaker"},
       "nodes": [
-        {"id": "observe_evidence", "kind": "tool", "objective": "Request one authorized observation through the external controller and preserve its provenance.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": ["read_observation"], "state_read_scope": ["budget_remaining"], "state_write_scope": ["observations"], "evaluator_refs": [], "retry_policy_ref": "transient_read_retry", "timeout_policy_ref": "observation_timeout", "checkpoint_before": false, "checkpoint_after": false},
-        {"id": "choose_next_action", "kind": "model", "objective": "Update the diagnosis and propose another observation or termination for controller validation.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected", "latest_observation_valid"], "state_write_scope": ["diagnosis"], "evaluator_refs": ["observation_coverage_check"], "retry_policy_ref": "model_schema_retry", "timeout_policy_ref": "model_timeout", "checkpoint_before": false, "checkpoint_after": false},
-        {"id": "export_passed", "kind": "terminal", "objective": "Export a diagnosis only after deterministic acceptance evidence passes.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "acceptance_passed"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
-        {"id": "export_stopped", "kind": "terminal", "objective": "Export a bounded non-passing stop result with collected evidence.", "supports_acceptance_criteria": [], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false}
+        {"id": "observe_evidence", "kind": "tool", "role": "verifier", "objective": "Request one authorized observation through the external controller and preserve its provenance.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": ["read_observation"], "state_read_scope": ["budget_remaining"], "state_write_scope": ["observations", "new_evidence_count"], "evaluator_refs": [], "retry_policy_ref": "transient_read_retry", "timeout_policy_ref": "observation_timeout", "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "choose_next_action", "kind": "model", "role": "planner", "objective": "Update the diagnosis and propose another observation or termination for controller validation.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected", "latest_observation_valid", "new_evidence_count"], "state_write_scope": ["diagnosis"], "evaluator_refs": ["observation_coverage_check"], "retry_policy_ref": "model_schema_retry", "timeout_policy_ref": "model_timeout", "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "export_passed", "kind": "terminal", "role": "terminal", "objective": "Export a diagnosis only after deterministic acceptance evidence passes.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "acceptance_passed"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "export_stopped", "kind": "terminal", "role": "terminal", "objective": "Export a bounded non-passing stop result with collected evidence.", "supports_acceptance_criteria": [], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false}
       ],
       "edges": [
         {"from": "observe_evidence", "to": "choose_next_action", "condition": {"all": [{"fact": "state.latest_observation_valid", "operator": "eq", "value": true}]}, "priority": 10},
@@ -69,6 +69,7 @@
         "node_ids": ["observe_evidence", "choose_next_action"],
         "progress_signals": [
           {"fact": "state.observations.unique_count", "operator": "increases", "evidence_ref": "observation_provenance"},
+          {"fact": "state.new_evidence_count", "operator": "increases", "evidence_ref": "progress_fingerprint"},
           {"fact": "state.unexplained_failure_count", "operator": "decreases", "evidence_ref": "observation_coverage_check"}
         ],
         "stagnation_policy_ref": "evidence_stagnation",
@@ -96,7 +97,7 @@
       "side_effect_policies": []
     },
     "evaluation": {
-      "criteria_bindings": [{"criterion_id": "AC-1", "evaluator_ref": "observation_coverage_check"}],
+      "criteria_bindings": [{"criterion_id": "AC-1", "evaluator_ref": "observation_coverage_check", "evaluator_node": "observe_evidence"}],
       "evaluator_registry": ["observation_coverage_check"],
       "result_state_path": "acceptance_passed",
       "controller_writes_results": true,
@@ -110,7 +111,7 @@
       "stagnation": [{"id": "evidence_stagnation", "window_ref": "stagnation_window", "signals": [{"fact": "state.observation_fingerprint", "operator": "eq", "comparison": "previous_cycle"}, {"fact": "state.diagnosis_fingerprint", "operator": "eq", "comparison": "previous_cycle"}]}],
       "recovery": [{"id": "bounded_non_passing_export", "rule": "Route deterministic budget or stagnation stops to export_stopped."}],
       "checkpoint": [],
-      "budget": [{"id": "diagnosis_budget", "threshold_refs": ["observation_budget", "model_call_budget"], "enforcement": "external controller checks before each node"}],
+      "budget": [{"id": "diagnosis_budget", "threshold_refs": ["observation_budget", "model_call_budget", "max_runtime_seconds", "max_iterations", "max_token_budget", "max_no_progress_loops"], "enforcement": "external controller checks before each node"}],
       "scope": [{"id": "diagnosis_only", "rule": "No repair or external write is permitted."}],
       "observability": [{"id": "diagnosis_trace", "events": ["node_start", "node_end", "state_delta", "evaluation", "terminal_decision"]}]
     },
@@ -124,7 +125,11 @@
       {"id": "model_retry_limit", "value": 1, "unit": "attempts", "source": "asset_policy", "rationale": "Allow one structured-output correction.", "calibration_scope": "model proposal", "review_trigger": "structured-output reliability changes"},
       {"id": "observation_timeout", "value": 30, "unit": "seconds", "source": "provisional_estimate", "rationale": "Bound one controller-mediated observation request.", "calibration_scope": "read_observation", "review_trigger": "tool latency evidence becomes available"},
       {"id": "model_timeout", "value": 120, "unit": "seconds", "source": "provisional_estimate", "rationale": "Bound one diagnosis proposal.", "calibration_scope": "model proposal", "review_trigger": "model latency evidence becomes available"},
-      {"id": "stagnation_window", "value": 2, "unit": "cycles", "source": "asset_policy", "rationale": "Stop after two unchanged evidence and diagnosis fingerprints.", "calibration_scope": "diagnosis cycle", "review_trigger": "historical stagnation evidence becomes available"}
+      {"id": "stagnation_window", "value": 2, "unit": "cycles", "source": "asset_policy", "rationale": "Stop after two unchanged evidence and diagnosis fingerprints.", "calibration_scope": "diagnosis cycle", "review_trigger": "historical stagnation evidence becomes available"},
+      {"id": "max_runtime_seconds", "value": 900, "unit": "seconds", "source": "request_budget_envelope", "rationale": "Hard wall-clock stop for the loop.", "calibration_scope": "diagnosis cycle", "review_trigger": "runtime budget changes"},
+      {"id": "max_iterations", "value": 4, "unit": "iterations", "source": "request_budget_envelope", "rationale": "Hard iteration stop for the loop.", "calibration_scope": "diagnosis cycle", "review_trigger": "iteration budget changes"},
+      {"id": "max_token_budget", "value": 120000, "unit": "tokens", "source": "request_budget_envelope", "rationale": "Hard token budget stop for the loop.", "calibration_scope": "diagnosis cycle", "review_trigger": "token budget changes"},
+      {"id": "max_no_progress_loops", "value": 1, "unit": "loops", "source": "request_budget_envelope", "rationale": "Stop when consecutive evidence fingerprints show no progress.", "calibration_scope": "diagnosis cycle", "review_trigger": "stagnation tolerance changes"}
     ],
     "validation": {"schema_version": "loop-spec-v4", "required_checks": ["acceptance_bindings", "graph_reachability", "edge_condition_observability", "edge_priority_determinism", "state_initialization", "cycle_controls", "tool_capability_binding", "status_mapping", "threshold_sources", "reference_resolution"]}
   },

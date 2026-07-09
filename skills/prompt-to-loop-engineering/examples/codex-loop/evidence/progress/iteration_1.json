@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_type": "progress_sample",
+  "cycle_id": "bounded_plan_execute_cycle",
+  "iteration": 1,
+  "artifact_hash": "sha256:plan-v1",
+  "diff_fingerprint": "sha256:diff-v1",
+  "test_count": 0,
+  "new_evidence_count": 1
+}

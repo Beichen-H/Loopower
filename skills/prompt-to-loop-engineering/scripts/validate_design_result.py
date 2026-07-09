@@ -31,6 +31,20 @@ CAPABILITY_FLAGS = (
     "subagents",
 )
 CAPABILITY_KEYS = {"available_tools", *CAPABILITY_FLAGS}
+REQUIRED_LOOP_BUDGET_THRESHOLDS = {
+    "max_runtime_seconds",
+    "max_iterations",
+    "max_token_budget",
+    "max_no_progress_loops",
+}
+DETERMINISTIC_PROGRESS_FACTS = {
+    "state.diff_fingerprint",
+    "state.test_count",
+    "state.artifact_hash",
+    "state.new_evidence_count",
+}
+NODE_ROLES = {"planner", "implementer", "reviewer", "verifier", "terminal"}
+WRITE_TOOLS_FORBIDDEN_FOR_REVIEW = {"edit_files", "write_files", "apply_patch"}
 NODE_KINDS = {
     "deterministic",
     "model",
@@ -187,7 +201,7 @@ def _validate_subagent_capability_discovery(
     )
 
 
-def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     value = _object(request, "Loop_design_request")
     _require_keys(
         value,
@@ -205,7 +219,13 @@ def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str
     _non_empty_string(value["request_id"], "Loop_design_request.request_id")
     _non_empty_string(value["task_prompt"], "Loop_design_request.task_prompt")
     _list(value["known_context"], "Loop_design_request.known_context")
-    _object(value["budget_envelope"], "Loop_design_request.budget_envelope")
+    budget = _object(value["budget_envelope"], "Loop_design_request.budget_envelope")
+    for key in REQUIRED_LOOP_BUDGET_THRESHOLDS:
+        if key in budget:
+            _require(
+                isinstance(budget[key], int) and not isinstance(budget[key], bool) and budget[key] >= 1,
+                f"budget_envelope.{key} must be a positive integer",
+            )
     _object(value["output_requirements"], "Loop_design_request.output_requirements")
 
     raw = _object(value["runtime_capabilities"], "Loop_design_request.runtime_capabilities")
@@ -222,13 +242,13 @@ def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str
     _require_keys(policy, {"allowed_side_effects", "forbidden_actions", "approval_rules"}, "policy_constraints")
     for key in ("allowed_side_effects", "forbidden_actions", "approval_rules"):
         _list(policy[key], f"policy_constraints.{key}")
-    return capabilities, policy
+    return capabilities, policy, budget
 
 
 def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> None:
     """Validate one static build result against its declared runtime request."""
 
-    capabilities, policy = _validate_request(request)
+    capabilities, policy, budget = _validate_request(request)
     result = _object(payload, "loop_design_result")
     _require_keys(
         result,
@@ -304,6 +324,7 @@ def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> 
             expected_mode=disposition,
             capabilities=capabilities,
             policy=policy,
+            budget=budget,
             criterion_ids=criterion_ids,
             mandatory_ids=mandatory_ids,
         )
@@ -403,6 +424,7 @@ def _validate_loop_spec(
     expected_mode: str,
     capabilities: dict[str, Any],
     policy: dict[str, Any],
+    budget: dict[str, Any],
     criterion_ids: set[str],
     mandatory_ids: set[str],
 ) -> None:
@@ -447,10 +469,13 @@ def _validate_loop_spec(
         evaluator_registry=set(_list(_object(spec["evaluation"], "loop_spec.evaluation").get("evaluator_registry"), "evaluation.evaluator_registry")),
         policy_registry=policy_registry,
     )
-    _validate_evaluation(_object(spec["evaluation"], "loop_spec.evaluation"), criterion_ids, mandatory_ids)
+    evaluation = _object(spec["evaluation"], "loop_spec.evaluation")
+    _validate_evaluation(evaluation, criterion_ids, mandatory_ids, flow_info)
     _validate_transition_policy(_object(spec["transition_policy"], "loop_spec.transition_policy"), expected_mode, flow_info)
     _validate_policy_refs(_object(spec["policies"], "loop_spec.policies"), policy_registry)
     _validate_capability_usage(spec, architecture, flow_info, tools, capabilities)
+    if expected_mode == "agent_loop":
+        _validate_agent_loop_hard_limits(budget, thresholds)
 
     validation = _object(spec["validation"], "loop_spec.validation")
     _require(validation.get("schema_version") == "loop-spec-v4", "loop_spec.validation.schema_version must be 'loop-spec-v4'")
@@ -487,21 +512,21 @@ def _validate_state(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
-def _validate_thresholds(thresholds: list[Any]) -> set[str]:
-    threshold_ids: set[str] = set()
+def _validate_thresholds(thresholds: list[Any]) -> dict[str, dict[str, Any]]:
+    threshold_ids: dict[str, dict[str, Any]] = {}
     for index, threshold in enumerate(thresholds):
         item = _object(threshold, f"loop_spec.threshold_register[{index}]")
         _require_keys(item, {"id", "value", "unit", "source", "rationale", "calibration_scope", "review_trigger"}, f"loop_spec.threshold_register[{index}]")
         threshold_id = _non_empty_string(item["id"], f"loop_spec.threshold_register[{index}].id")
         _require(threshold_id not in threshold_ids, f"duplicate threshold id {threshold_id!r}")
-        threshold_ids.add(threshold_id)
+        threshold_ids[threshold_id] = item
         _require(isinstance(item["value"], (int, float)) and not isinstance(item["value"], bool), f"threshold {threshold_id!r}.value must be numeric")
         for key in ("unit", "source", "rationale", "calibration_scope", "review_trigger"):
             _non_empty_string(item[key], f"threshold {threshold_id!r}.{key}")
     return threshold_ids
 
 
-def _validate_policy_registry(registry: dict[str, Any], threshold_ids: set[str]) -> dict[str, set[str]]:
+def _validate_policy_registry(registry: dict[str, Any], threshold_ids: dict[str, dict[str, Any]]) -> dict[str, set[str]]:
     required_groups = {"retry", "timeout", "stagnation", "recovery", "checkpoint", "budget", "scope", "observability"}
     _require_keys(registry, required_groups, "loop_spec.policy_registry")
     ids: dict[str, set[str]] = {}
@@ -520,6 +545,30 @@ def _validate_policy_registry(registry: dict[str, Any], threshold_ids: set[str])
                 for ref in _string_list(item["threshold_refs"], f"{group} policy {policy_id!r}.threshold_refs", non_empty=True):
                     _require(ref in threshold_ids, f"{group} policy {policy_id!r} references missing threshold {ref!r}")
     return ids
+
+
+def _validate_agent_loop_hard_limits(
+    budget: dict[str, Any],
+    thresholds: dict[str, dict[str, Any]],
+) -> None:
+    missing_budget = sorted(REQUIRED_LOOP_BUDGET_THRESHOLDS - set(budget))
+    _require(
+        not missing_budget,
+        f"agent_loop budget_envelope missing hard limits: {missing_budget}",
+    )
+    missing_thresholds = sorted(REQUIRED_LOOP_BUDGET_THRESHOLDS - set(thresholds))
+    _require(
+        not missing_thresholds,
+        f"agent_loop threshold_register missing hard limit thresholds: {missing_thresholds}",
+    )
+    mismatched: list[str] = []
+    for threshold_id in sorted(REQUIRED_LOOP_BUDGET_THRESHOLDS):
+        if thresholds[threshold_id]["value"] != budget[threshold_id]:
+            mismatched.append(threshold_id)
+    _require(
+        not mismatched,
+        f"agent_loop hard limit thresholds do not align with budget_envelope: {mismatched}",
+    )
 
 
 def _validate_tools(tools: dict[str, Any], capabilities: dict[str, Any], policy: dict[str, Any]) -> set[str]:
@@ -586,20 +635,30 @@ def _validate_control_flow(
 
     node_ids: set[str] = set()
     node_kinds: dict[str, str] = {}
+    node_roles: dict[str, str] = {}
     nodes_by_id: dict[str, dict[str, Any]] = {}
     for index, node in enumerate(nodes):
         item = _object(node, f"control_flow.nodes[{index}]")
-        _require_keys(item, {"id", "kind", "objective", "input_schema", "output_schema", "allowed_tools", "state_read_scope", "state_write_scope"}, f"control_flow.nodes[{index}]")
+        _require_keys(item, {"id", "kind", "role", "objective", "input_schema", "output_schema", "allowed_tools", "state_read_scope", "state_write_scope"}, f"control_flow.nodes[{index}]")
         node_id = _non_empty_string(item["id"], f"control_flow.nodes[{index}].id")
         _require(node_id not in node_ids, f"duplicate loop_spec node id {node_id!r}")
         _require(item["kind"] in NODE_KINDS, f"node {node_id!r} has invalid kind")
+        _require(item["role"] in NODE_ROLES, f"node {node_id!r} has invalid role")
         _non_empty_string(item["objective"], f"node {node_id!r}.objective")
         node_ids.add(node_id)
         node_kinds[node_id] = item["kind"]
+        node_roles[node_id] = item["role"]
         nodes_by_id[node_id] = item
         for key in ("state_read_scope", "state_write_scope"):
             scope = set(_string_list(item[key], f"node {node_id!r}.{key}"))
             _require(scope <= state_fields, f"node {node_id!r}.{key} references undefined state fields {sorted(scope - state_fields)}")
+        if item["role"] in {"reviewer", "verifier"}:
+            node_tools = set(_string_list(item.get("allowed_tools", []), f"node {node_id!r}.allowed_tools"))
+            forbidden = sorted(node_tools & WRITE_TOOLS_FORBIDDEN_FOR_REVIEW)
+            _require(
+                not forbidden,
+                f"reviewer or verifier node {node_id!r} must remain read-only; forbidden write tools: {forbidden}",
+            )
         for criterion_id in _string_list(item.get("supports_acceptance_criteria", []), f"node {node_id!r}.supports_acceptance_criteria"):
             _require(criterion_id in criterion_ids, f"node {node_id!r} references unknown criterion {criterion_id!r}")
         for evaluator in _string_list(item.get("evaluator_refs", []), f"node {node_id!r}.evaluator_refs"):
@@ -677,6 +736,11 @@ def _validate_control_flow(
             _validate_observable_fact(signal["fact"], f"cycle {cycle_id!r}.progress_signals[{signal_index}].fact")
             _require(signal["operator"] in PROGRESS_OPERATORS, f"cycle {cycle_id!r} progress operator is invalid")
             _non_empty_string(signal["evidence_ref"], f"cycle {cycle_id!r}.progress_signals[{signal_index}].evidence_ref")
+        progress_facts = {signal["fact"] for signal in progress if isinstance(signal, dict)}
+        _require(
+            bool(progress_facts & DETERMINISTIC_PROGRESS_FACTS),
+            f"cycle {cycle_id!r} requires at least one deterministic progress fact from {sorted(DETERMINISTIC_PROGRESS_FACTS)}",
+        )
         stagnation_ref = _non_empty_string(item["stagnation_policy_ref"], f"cycle {cycle_id!r}.stagnation_policy_ref")
         budget_ref = _non_empty_string(item["budget_policy_ref"], f"cycle {cycle_id!r}.budget_policy_ref")
         _require(stagnation_ref in policy_registry["stagnation"], f"cycle {cycle_id!r} references missing stagnation policy {stagnation_ref!r}")
@@ -693,9 +757,16 @@ def _validate_control_flow(
     for detected in detected_cycles:
         _require(any(detected <= declared for declared in declared_cycles), f"undeclared directed cycle detected: {sorted(detected)}")
 
+    if "implementer" in node_roles.values():
+        _require(
+            any(role in {"reviewer", "verifier"} for role in node_roles.values()),
+            "an implementer node requires at least one reviewer or verifier node",
+        )
+
     return {
         "node_ids": node_ids,
         "node_kinds": node_kinds,
+        "node_roles": node_roles,
         "nodes_by_id": nodes_by_id,
         "terminal_ids": terminal_ids,
         "terminal_status_by_node": terminal_status_by_node,
@@ -703,7 +774,12 @@ def _validate_control_flow(
     }
 
 
-def _validate_evaluation(evaluation: dict[str, Any], criterion_ids: set[str], mandatory_ids: set[str]) -> None:
+def _validate_evaluation(
+    evaluation: dict[str, Any],
+    criterion_ids: set[str],
+    mandatory_ids: set[str],
+    flow: dict[str, Any],
+) -> None:
     _require_keys(evaluation, {"criteria_bindings", "evaluator_registry", "result_state_path", "controller_writes_results", "deterministic_checks", "independent_review_policy"}, "loop_spec.evaluation")
     registry = set(_string_list(evaluation["evaluator_registry"], "evaluation.evaluator_registry", non_empty=True))
     bindings = _list(evaluation["criteria_bindings"], "evaluation.criteria_bindings")
@@ -714,6 +790,19 @@ def _validate_evaluation(evaluation: dict[str, Any], criterion_ids: set[str], ma
         evaluator_ref = _non_empty_string(item.get("evaluator_ref"), f"evaluation.criteria_bindings[{index}].evaluator_ref")
         _require(criterion_id in criterion_ids, f"evaluation binding references unknown criterion {criterion_id!r}")
         _require(evaluator_ref in registry, f"evaluation binding references unregistered evaluator {evaluator_ref!r}")
+        evaluator_node = item.get("evaluator_node")
+        if evaluator_node is not None:
+            _non_empty_string(evaluator_node, f"evaluation.criteria_bindings[{index}].evaluator_node")
+            _require(evaluator_node in flow["node_ids"], f"evaluation binding references undefined evaluator_node {evaluator_node!r}")
+        if criterion_id in mandatory_ids:
+            _require(
+                evaluator_node is not None,
+                f"mandatory criterion {criterion_id!r} requires evaluator_node for role isolation",
+            )
+            _require(
+                flow["node_roles"].get(evaluator_node) != "implementer",
+                f"mandatory criterion {criterion_id!r} evaluator_node {evaluator_node!r} cannot be an implementer",
+            )
         bound.add(criterion_id)
     missing = sorted(mandatory_ids - bound)
     _require(not missing, f"mandatory criterion bindings are missing for {missing}")

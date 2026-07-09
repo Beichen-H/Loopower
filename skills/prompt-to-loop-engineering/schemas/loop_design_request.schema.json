@@ -70,7 +70,20 @@
       "additionalProperties": false
     },
     "budget_envelope": {
-      "type": "object"
+      "type": "object",
+      "required": [
+        "max_runtime_seconds",
+        "max_iterations",
+        "max_token_budget",
+        "max_no_progress_loops"
+      ],
+      "properties": {
+        "max_runtime_seconds": { "type": "integer", "minimum": 1 },
+        "max_iterations": { "type": "integer", "minimum": 1 },
+        "max_token_budget": { "type": "integer", "minimum": 1 },
+        "max_no_progress_loops": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
     },
     "output_requirements": {
       "type": "object"

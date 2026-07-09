@@ -56,9 +56,9 @@
       "entry_node": "validate_config",
       "edge_selection_policy": {"priority_order": "lower_first", "match_policy": "first_match", "equal_priority": "require_explicit_tie_breaker"},
       "nodes": [
-        {"id": "validate_config", "kind": "deterministic", "objective": "Validate input and format it only when valid.", "supports_acceptance_criteria": ["AC-1", "AC-2"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": [], "state_write_scope": ["input_valid", "formatted_config"], "evaluator_refs": ["schema_check", "format_check"], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
-        {"id": "export_valid", "kind": "terminal", "objective": "Export the validated formatted configuration.", "supports_acceptance_criteria": ["AC-2"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["input_valid", "formatted_config"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
-        {"id": "export_invalid", "kind": "terminal", "objective": "Export deterministic validation errors without a formatted configuration.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["input_valid"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false}
+        {"id": "validate_config", "kind": "deterministic", "role": "verifier", "objective": "Validate input and format it only when valid.", "supports_acceptance_criteria": ["AC-1", "AC-2"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": [], "state_write_scope": ["input_valid", "formatted_config"], "evaluator_refs": ["schema_check", "format_check"], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "export_valid", "kind": "terminal", "role": "terminal", "objective": "Export the validated formatted configuration.", "supports_acceptance_criteria": ["AC-2"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["input_valid", "formatted_config"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "export_invalid", "kind": "terminal", "role": "terminal", "objective": "Export deterministic validation errors without a formatted configuration.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["input_valid"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false}
       ],
       "edges": [
         {"from": "validate_config", "to": "export_valid", "condition": {"all": [{"fact": "state.input_valid", "operator": "eq", "value": true}]}, "priority": 10},
@@ -70,7 +70,7 @@
     "transition_policy": {"authority": "deterministic_controller", "proposal_source_nodes": [], "allowed_targets": ["validate_config", "export_valid", "export_invalid"], "proposal_schema": {}, "controller_validation": "required", "fallback_node": "export_invalid"},
     "tools": {"contracts": [], "rollback_procedures": [], "permission_bindings": [], "side_effect_policies": []},
     "evaluation": {
-      "criteria_bindings": [{"criterion_id": "AC-1", "evaluator_ref": "schema_check"}, {"criterion_id": "AC-2", "evaluator_ref": "format_check"}],
+      "criteria_bindings": [{"criterion_id": "AC-1", "evaluator_ref": "schema_check", "evaluator_node": "validate_config"}, {"criterion_id": "AC-2", "evaluator_ref": "format_check", "evaluator_node": "validate_config"}],
       "evaluator_registry": ["schema_check", "format_check"],
       "result_state_path": "input_valid",
       "controller_writes_results": true,
