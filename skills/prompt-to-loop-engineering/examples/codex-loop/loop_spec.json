@@ -15,6 +15,7 @@
   "runtime_binding": {
     "capabilities_snapshot": {
       "available_tools": ["read_files", "edit_files", "run_tests"],
+      "tool_access_modes": {"read_files": "read_only", "edit_files": "workspace_write", "run_tests": "read_only"},
       "durable_state": false,
       "checkpoint_resume": false,
       "sandbox": true,
@@ -25,6 +26,7 @@
     },
     "required_capabilities": {
       "available_tools": ["read_files", "edit_files", "run_tests"],
+      "tool_access_modes": {"read_files": "read_only", "edit_files": "workspace_write", "run_tests": "read_only"},
       "sandbox": true,
       "human_interrupt": true,
       "subagents": true,
@@ -111,9 +113,9 @@
     "terminal_nodes": {"passed": ["terminal_export"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["terminal_export"], "cancelled": []}
   },
   "threshold_register": [
-    {"id": "max_runtime_seconds", "value": 900, "unit": "seconds", "source": "defensive_default", "rationale": "Hard wall-clock stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "runtime budget changes"},
-    {"id": "max_iterations", "value": 3, "unit": "iterations", "source": "defensive_default", "rationale": "Hard iteration stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "iteration budget changes"},
-    {"id": "max_token_budget", "value": 120000, "unit": "tokens", "source": "defensive_default", "rationale": "Hard token budget stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "token budget changes"},
-    {"id": "max_no_progress_loops", "value": 1, "unit": "loops", "source": "defensive_default", "rationale": "Stop when consecutive progress fingerprints show no material change.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "stagnation tolerance changes"}
+    {"id": "max_runtime_seconds", "value": 900, "unit": "seconds", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard wall-clock stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "runtime budget changes"},
+    {"id": "max_iterations", "value": 3, "unit": "iterations", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard iteration stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "iteration budget changes"},
+    {"id": "max_token_budget", "value": 45000, "unit": "tokens", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard token budget stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "token budget changes"},
+    {"id": "max_no_progress_loops", "value": 1, "unit": "loops", "source": "default_policy:codex-native-safe-v1", "rationale": "Stop when consecutive progress fingerprints show no material change.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "stagnation tolerance changes"}
   ]
 }

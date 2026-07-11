@@ -121,6 +121,24 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("governance_overlay", result.stdout + result.stderr)
 
+    def test_rejects_verifier_with_workspace_write_tool(self) -> None:
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / ".codex-loop"
+            shutil.copytree(EXAMPLE, work)
+            spec_path = work / "loop_spec.json"
+            spec = json.loads(spec_path.read_text(encoding="utf-8"))
+            for node in spec["control_flow"]["nodes"]:
+                if node["role"] == "verifier":
+                    node["allowed_tools"] = ["edit_files"]
+            spec_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+
+            result = self.run_validator(work)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("non-read-only tools", result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,12 +10,14 @@
   ],
   "runtime_capabilities": {
     "available_tools": ["read_observation"],
+    "tool_access_modes": {"read_observation": "read_only"},
     "durable_state": false,
     "checkpoint_resume": false,
     "sandbox": false,
     "human_interrupt": false,
     "parallel_execution": false,
-    "subagents": false
+    "subagents": false,
+    "required_subagent_reasoning_intensity": null
   },
   "policy_constraints": {
     "allowed_side_effects": [],

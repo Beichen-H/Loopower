@@ -2,7 +2,7 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `1.8.0`：它是 Codex-native Loop Agent Builder、Live Subagent Bridge、Cooperative Governance Overlay、Model Configuration Inheritance Contract、Evidence-Locked DAG Execution Governance 与 Role-Isolated Governance。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并定义 Codex 如何在不独占会话路由的前提下治理审批、脚手架生命周期、宿主原生 live sub-agent 激活、子智能体推理强度对齐、角色隔离验证与 post-hoc evidence validation。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `2.0.0`：它是具备可验证请求规范化、预算来源追踪、Evidence-Locked DAG Execution Governance、基于访问模式的审阅者隔离以及版本化多循环进展证据的 Codex-native Loop Agent Builder。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并在不独占会话路由的前提下治理审批、宿主原生 live sub-agent 激活与后验轨迹验证。
 
 本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
 
@@ -315,10 +315,23 @@ python -B skills/prompt-to-loop-engineering/scripts/test_spec_loading.py
 
 验证已发布的 design-result 示例：
 
+在设计验证前，先规范化缺少预算字段的原始请求：
+
+```bash
+python skills/prompt-to-loop-engineering/scripts/normalize_design_request.py \
+  path/to/raw_request.json \
+  --output path/to/effective_request.json \
+  --report path/to/request_normalization_report.json
+```
+
+该命令不会修改源文件。缺失上限使用版本化 `codex-native-safe-v1` 策略；显式无效值会失败，不会被悄悄替换。随后使用 effective request 执行下面的验证命令。
+
 ```bash
 python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
-  skills/prompt-to-loop-engineering/examples/agent_loop.json \
-  --request skills/prompt-to-loop-engineering/examples/requests/agent_loop.json
+  path/to/loop_design_result.json \
+  --request path/to/effective_request.json \
+  --raw-request path/to/raw_request.json \
+  --normalization-report path/to/request_normalization_report.json
 ```
 
 ## License
@@ -326,6 +339,23 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v2.0.0 (2026-07-10)
+
+- 将 raw/effective request 哈希与规范化来源报告升级为 Validator 强制输入。
+- 统一能力 Schema 与 Validator，包括 `required_subagent_reasoning_intensity`。
+- 分离设计期 LoopSpec 与 GO 阶段 scaffold 的治理字段要求。
+- 使用声明式 `access_mode` 替代 reviewer 工具名黑名单。
+- 新增 `progress_evidence.schema.json` v2，覆盖 run/cycle 身份、连续序列、权威计数器与多 Cycle 隔离。
+- 增加发布表面回归测试与更严格的 CI 门禁。
+
+### v1.9.0 (2026-07-10)
+
+- 新增 `scripts/normalize_design_request.py`，在不修改用户原始输入的前提下生成严格的 effective request。
+- 新增版本化 `codex-native-safe-v1` 预算策略：900 秒、3 次迭代、45,000 Token、1 次无进展循环。
+- 新增确定性规范化来源报告，记录 raw/effective 哈希以及显式值和默认值。
+- 保持 `validate_design_result.py` fail-closed，禁止验证器隐式修复输入。
+- 扩展 `validate_loop_progress_evidence.py`，根据持久化 LoopSpec 阈值执行运行时长、迭代、Token 和无进展四项熔断。
 
 ### v1.8.0 (2026-07-09)
 

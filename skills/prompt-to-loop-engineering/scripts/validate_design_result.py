@@ -13,6 +13,8 @@ from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 
+from normalize_design_request import normalize_design_request
+
 
 DISPOSITION_TO_BUILD_STATUS = {
     "one_shot": "no_loop_needed",
@@ -30,7 +32,12 @@ CAPABILITY_FLAGS = (
     "parallel_execution",
     "subagents",
 )
-CAPABILITY_KEYS = {"available_tools", *CAPABILITY_FLAGS}
+CAPABILITY_KEYS = {
+    "available_tools",
+    "tool_access_modes",
+    *CAPABILITY_FLAGS,
+    "required_subagent_reasoning_intensity",
+}
 REQUIRED_LOOP_BUDGET_THRESHOLDS = {
     "max_runtime_seconds",
     "max_iterations",
@@ -44,7 +51,7 @@ DETERMINISTIC_PROGRESS_FACTS = {
     "state.new_evidence_count",
 }
 NODE_ROLES = {"planner", "implementer", "reviewer", "verifier", "terminal"}
-WRITE_TOOLS_FORBIDDEN_FOR_REVIEW = {"edit_files", "write_files", "apply_patch"}
+TOOL_ACCESS_MODES = {"read_only", "workspace_write", "external_write"}
 NODE_KINDS = {
     "deterministic",
     "model",
@@ -220,23 +227,38 @@ def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str
     _non_empty_string(value["task_prompt"], "Loop_design_request.task_prompt")
     _list(value["known_context"], "Loop_design_request.known_context")
     budget = _object(value["budget_envelope"], "Loop_design_request.budget_envelope")
+    missing_budget = sorted(REQUIRED_LOOP_BUDGET_THRESHOLDS - set(budget))
+    _require(
+        not missing_budget,
+        "effective Loop_design_request budget_envelope missing hard limits: "
+        f"{missing_budget}; run normalize_design_request.py first",
+    )
     for key in REQUIRED_LOOP_BUDGET_THRESHOLDS:
-        if key in budget:
-            _require(
-                isinstance(budget[key], int) and not isinstance(budget[key], bool) and budget[key] >= 1,
-                f"budget_envelope.{key} must be a positive integer",
-            )
+        _require(
+            isinstance(budget[key], int) and not isinstance(budget[key], bool) and budget[key] >= 1,
+            f"budget_envelope.{key} must be a positive integer",
+        )
     _object(value["output_requirements"], "Loop_design_request.output_requirements")
 
     raw = _object(value["runtime_capabilities"], "Loop_design_request.runtime_capabilities")
     unknown = sorted(set(raw) - CAPABILITY_KEYS)
     _require(not unknown, f"runtime_capabilities contains unknown fields: {unknown}")
     tools = _string_list(raw.get("available_tools", []), "runtime_capabilities.available_tools")
-    capabilities: dict[str, Any] = {"available_tools": tools}
+    tool_access_modes = _object(raw.get("tool_access_modes"), "runtime_capabilities.tool_access_modes")
+    _require(set(tool_access_modes) == set(tools), "runtime_capabilities.tool_access_modes must classify every available tool exactly once")
+    for tool_id, access_mode in tool_access_modes.items():
+        _require(access_mode in TOOL_ACCESS_MODES, f"runtime_capabilities.tool_access_modes.{tool_id} has invalid access mode")
+    capabilities: dict[str, Any] = {"available_tools": tools, "tool_access_modes": tool_access_modes}
     for flag in CAPABILITY_FLAGS:
         flag_value = raw.get(flag, False)
         _require(type(flag_value) is bool, f"runtime_capabilities.{flag} must be boolean")
         capabilities[flag] = flag_value
+    reasoning = raw.get("required_subagent_reasoning_intensity")
+    _require(
+        reasoning in {None, "extended_thought"},
+        "runtime_capabilities.required_subagent_reasoning_intensity must be extended_thought or null",
+    )
+    capabilities["required_subagent_reasoning_intensity"] = reasoning
 
     policy = _object(value["policy_constraints"], "Loop_design_request.policy_constraints")
     _require_keys(policy, {"allowed_side_effects", "forbidden_actions", "approval_rules"}, "policy_constraints")
@@ -245,9 +267,33 @@ def _validate_request(request: dict[str, Any]) -> tuple[dict[str, Any], dict[str
     return capabilities, policy, budget
 
 
-def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> None:
+def _validate_normalization_chain(
+    raw_request: dict[str, Any],
+    effective_request: dict[str, Any],
+    normalization_report: dict[str, Any],
+) -> dict[str, Any]:
+    expected_request, expected_report = normalize_design_request(raw_request)
+    _require(
+        effective_request == expected_request,
+        "effective Loop_design_request does not match deterministic normalization of raw request",
+    )
+    _require(
+        normalization_report == expected_report,
+        "normalization report does not match raw/effective request hashes or default provenance",
+    )
+    return expected_report
+
+
+def validate_design_result(
+    payload: dict[str, Any],
+    request: dict[str, Any],
+    *,
+    raw_request: dict[str, Any],
+    normalization_report: dict[str, Any],
+) -> None:
     """Validate one static build result against its declared runtime request."""
 
+    provenance = _validate_normalization_chain(raw_request, request, normalization_report)
     capabilities, policy, budget = _validate_request(request)
     result = _object(payload, "loop_design_result")
     _require_keys(
@@ -325,6 +371,7 @@ def validate_design_result(payload: dict[str, Any], request: dict[str, Any]) -> 
             capabilities=capabilities,
             policy=policy,
             budget=budget,
+            budget_defaults=set(provenance["defaults_applied"]),
             criterion_ids=criterion_ids,
             mandatory_ids=mandatory_ids,
         )
@@ -425,6 +472,7 @@ def _validate_loop_spec(
     capabilities: dict[str, Any],
     policy: dict[str, Any],
     budget: dict[str, Any],
+    budget_defaults: set[str],
     criterion_ids: set[str],
     mandatory_ids: set[str],
 ) -> None:
@@ -450,10 +498,28 @@ def _validate_loop_spec(
     _require(not unknown_requirements, f"required_capabilities contains unknown fields: {unknown_requirements}")
     required_tools = _string_list(required_capabilities.get("available_tools", []), "required_capabilities.available_tools")
     _require(set(required_tools) <= set(capabilities["available_tools"]), f"required tools are unavailable: {sorted(set(required_tools) - set(capabilities['available_tools']))}")
+    required_access_modes = _object(required_capabilities.get("tool_access_modes", {}), "required_capabilities.tool_access_modes")
+    _require(set(required_access_modes) <= set(required_tools), "required_capabilities.tool_access_modes may classify only required tools")
+    for tool_id, access_mode in required_access_modes.items():
+        _require(access_mode == capabilities["tool_access_modes"][tool_id], f"required tool access mode for {tool_id!r} does not match runtime capability")
     for flag in CAPABILITY_FLAGS:
         requested = required_capabilities.get(flag, False)
         _require(type(requested) is bool, f"required_capabilities.{flag} must be boolean")
         _require(not requested or capabilities[flag], f"required capability {flag} is unavailable")
+    required_reasoning = required_capabilities.get("required_subagent_reasoning_intensity")
+    _require(
+        required_reasoning in {None, "extended_thought"},
+        "required_capabilities.required_subagent_reasoning_intensity must be extended_thought or null",
+    )
+    _require(
+        required_reasoning is None or capabilities["required_subagent_reasoning_intensity"] == required_reasoning,
+        "required subagent reasoning intensity is unavailable",
+    )
+    if required_capabilities.get("subagents") is True:
+        _require(
+            required_reasoning == "extended_thought",
+            "subagent designs require required_subagent_reasoning_intensity='extended_thought'",
+        )
     mismatches = _list(binding.get("capability_mismatches"), "runtime_binding.capability_mismatches")
     _require(not mismatches, "spec_ready loop_spec cannot contain capability_mismatches")
 
@@ -468,6 +534,7 @@ def _validate_loop_spec(
         state_fields=set(state["schema"]),
         evaluator_registry=set(_list(_object(spec["evaluation"], "loop_spec.evaluation").get("evaluator_registry"), "evaluation.evaluator_registry")),
         policy_registry=policy_registry,
+        tool_access_modes=tools,
     )
     evaluation = _object(spec["evaluation"], "loop_spec.evaluation")
     _validate_evaluation(evaluation, criterion_ids, mandatory_ids, flow_info)
@@ -475,7 +542,7 @@ def _validate_loop_spec(
     _validate_policy_refs(_object(spec["policies"], "loop_spec.policies"), policy_registry)
     _validate_capability_usage(spec, architecture, flow_info, tools, capabilities)
     if expected_mode == "agent_loop":
-        _validate_agent_loop_hard_limits(budget, thresholds)
+        _validate_agent_loop_hard_limits(budget, budget_defaults, thresholds)
 
     validation = _object(spec["validation"], "loop_spec.validation")
     _require(validation.get("schema_version") == "loop-spec-v4", "loop_spec.validation.schema_version must be 'loop-spec-v4'")
@@ -549,6 +616,7 @@ def _validate_policy_registry(registry: dict[str, Any], threshold_ids: dict[str,
 
 def _validate_agent_loop_hard_limits(
     budget: dict[str, Any],
+    budget_defaults: set[str],
     thresholds: dict[str, dict[str, Any]],
 ) -> None:
     missing_budget = sorted(REQUIRED_LOOP_BUDGET_THRESHOLDS - set(budget))
@@ -565,30 +633,42 @@ def _validate_agent_loop_hard_limits(
     for threshold_id in sorted(REQUIRED_LOOP_BUDGET_THRESHOLDS):
         if thresholds[threshold_id]["value"] != budget[threshold_id]:
             mismatched.append(threshold_id)
+        expected_source = (
+            "default_policy:codex-native-safe-v1"
+            if threshold_id in budget_defaults
+            else "request_budget_envelope"
+        )
+        _require(
+            thresholds[threshold_id]["source"] == expected_source,
+            f"agent_loop threshold {threshold_id!r} source must be {expected_source!r}",
+        )
     _require(
         not mismatched,
         f"agent_loop hard limit thresholds do not align with budget_envelope: {mismatched}",
     )
 
 
-def _validate_tools(tools: dict[str, Any], capabilities: dict[str, Any], policy: dict[str, Any]) -> set[str]:
+def _validate_tools(tools: dict[str, Any], capabilities: dict[str, Any], policy: dict[str, Any]) -> dict[str, str]:
     _require_keys(tools, {"contracts", "rollback_procedures", "permission_bindings", "side_effect_policies"}, "loop_spec.tools")
-    contract_ids: set[str] = set()
+    contract_access_modes: dict[str, str] = {}
     allowed_tools = set(capabilities["available_tools"])
     allowed_side_effects = set(policy["allowed_side_effects"])
     for index, raw in enumerate(_list(tools["contracts"], "loop_spec.tools.contracts")):
         item = _object(raw, f"loop_spec.tools.contracts[{index}]")
         tool_id = _non_empty_string(item.get("id"), f"loop_spec.tools.contracts[{index}].id")
-        _require(tool_id not in contract_ids, f"duplicate tool contract {tool_id!r}")
+        _require(tool_id not in contract_access_modes, f"duplicate tool contract {tool_id!r}")
         _require(tool_id in allowed_tools, f"tool {tool_id!r} is not present in runtime_capabilities.available_tools")
-        contract_ids.add(tool_id)
         _require(item.get("controller_executes") is True, f"tool {tool_id!r} must declare controller_executes=true")
+        access_mode = item.get("access_mode")
+        _require(access_mode in TOOL_ACCESS_MODES, f"tool {tool_id!r}.access_mode must be one of {sorted(TOOL_ACCESS_MODES)}")
+        _require(access_mode == capabilities["tool_access_modes"][tool_id], f"tool {tool_id!r}.access_mode does not match runtime capability snapshot")
+        contract_access_modes[tool_id] = access_mode
         side_effect = item.get("side_effect", "none")
         _require(side_effect == "none" or side_effect in allowed_side_effects, f"tool {tool_id!r} side effect {side_effect!r} is not allowed by policy")
     _list(tools["rollback_procedures"], "loop_spec.tools.rollback_procedures")
     _list(tools["permission_bindings"], "loop_spec.tools.permission_bindings")
     _list(tools["side_effect_policies"], "loop_spec.tools.side_effect_policies")
-    return contract_ids
+    return contract_access_modes
 
 
 def _validate_condition(value: Any, path: str) -> None:
@@ -623,6 +703,7 @@ def _validate_control_flow(
     state_fields: set[str],
     evaluator_registry: set[str],
     policy_registry: dict[str, set[str]],
+    tool_access_modes: dict[str, str],
 ) -> dict[str, Any]:
     _require_keys(control_flow, {"entry_node", "edge_selection_policy", "nodes", "edges", "cycles", "terminal_nodes"}, "loop_spec.control_flow")
     selection = _object(control_flow["edge_selection_policy"], "control_flow.edge_selection_policy")
@@ -654,10 +735,10 @@ def _validate_control_flow(
             _require(scope <= state_fields, f"node {node_id!r}.{key} references undefined state fields {sorted(scope - state_fields)}")
         if item["role"] in {"reviewer", "verifier"}:
             node_tools = set(_string_list(item.get("allowed_tools", []), f"node {node_id!r}.allowed_tools"))
-            forbidden = sorted(node_tools & WRITE_TOOLS_FORBIDDEN_FOR_REVIEW)
+            forbidden = sorted(tool_id for tool_id in node_tools if tool_access_modes.get(tool_id) != "read_only")
             _require(
                 not forbidden,
-                f"reviewer or verifier node {node_id!r} must remain read-only; forbidden write tools: {forbidden}",
+                f"reviewer or verifier node {node_id!r} must remain read-only; non-read-only tools: {forbidden}",
             )
         for criterion_id in _string_list(item.get("supports_acceptance_criteria", []), f"node {node_id!r}.supports_acceptance_criteria"):
             _require(criterion_id in criterion_ids, f"node {node_id!r} references unknown criterion {criterion_id!r}")
@@ -759,8 +840,11 @@ def _validate_control_flow(
 
     if "implementer" in node_roles.values():
         _require(
-            any(role in {"reviewer", "verifier"} for role in node_roles.values()),
-            "an implementer node requires at least one reviewer or verifier node",
+            any(
+                role in {"reviewer", "verifier"} and node_kinds[node_id] != "terminal"
+                for node_id, role in node_roles.items()
+            ),
+            "an implementer node requires at least one non-terminal reviewer or verifier node",
         )
 
     return {
@@ -800,8 +884,8 @@ def _validate_evaluation(
                 f"mandatory criterion {criterion_id!r} requires evaluator_node for role isolation",
             )
             _require(
-                flow["node_roles"].get(evaluator_node) != "implementer",
-                f"mandatory criterion {criterion_id!r} evaluator_node {evaluator_node!r} cannot be an implementer",
+                flow["node_roles"].get(evaluator_node) in {"reviewer", "verifier"},
+                f"mandatory criterion {criterion_id!r} evaluator_node {evaluator_node!r} must be a reviewer or verifier",
             )
         bound.add(criterion_id)
     missing = sorted(mandatory_ids - bound)
@@ -847,7 +931,7 @@ def _validate_capability_usage(
     spec: dict[str, Any],
     architecture: dict[str, Any],
     flow: dict[str, Any],
-    tool_contracts: set[str],
+    tool_contracts: dict[str, str],
     capabilities: dict[str, Any],
 ) -> None:
     used_tools: set[str] = set()
@@ -855,7 +939,8 @@ def _validate_capability_usage(
     for node_id, node in flow["nodes_by_id"].items():
         node_tools = set(_string_list(node.get("allowed_tools", []), f"node {node_id!r}.allowed_tools"))
         used_tools |= node_tools
-        _require(node_tools <= tool_contracts, f"node {node_id!r} references unregistered tool(s) {sorted(node_tools - tool_contracts)}")
+        registered_tools = set(tool_contracts)
+        _require(node_tools <= registered_tools, f"node {node_id!r} references unregistered tool(s) {sorted(node_tools - registered_tools)}")
         if node["kind"] == "tool":
             _require(bool(node_tools), f"tool node {node_id!r} must declare at least one allowed tool")
         checkpoint_used = checkpoint_used or node.get("checkpoint_before") is True or node.get("checkpoint_after") is True
@@ -889,6 +974,17 @@ def _validate_capability_usage(
         or bool(spec["delegation"].get("worker_profiles"))
     )
     _require(not worker_used or capabilities["subagents"], "subagents capability is required by worker/delegation design")
+    if worker_used:
+        requirements = spec["runtime_binding"]["required_capabilities"]
+        _require(requirements.get("subagents") is True, "worker/delegation design must require subagents explicitly")
+        _require(
+            capabilities["required_subagent_reasoning_intensity"] == "extended_thought",
+            "worker/delegation design requires extended_thought in the capability snapshot",
+        )
+        _require(
+            requirements.get("required_subagent_reasoning_intensity") == "extended_thought",
+            "worker/delegation design must require extended_thought explicitly",
+        )
     sandbox_used = spec["runtime_binding"]["required_capabilities"].get("sandbox", False)
     _require(not sandbox_used or capabilities["sandbox"], "sandbox capability is required by the design")
 
@@ -919,7 +1015,9 @@ def _find_directed_cycles(node_ids: set[str], adjacency: dict[str, list[str]]) -
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Statically validate a request-bound loop_design_result JSON file.")
     parser.add_argument("result", type=Path, help="Path to loop_design_result JSON")
-    parser.add_argument("--request", required=True, type=Path, help="Path to the source Loop_design_request JSON")
+    parser.add_argument("--request", required=True, type=Path, help="Path to the effective Loop_design_request JSON")
+    parser.add_argument("--raw-request", required=True, type=Path, help="Path to the preserved raw request JSON")
+    parser.add_argument("--normalization-report", required=True, type=Path, help="Path to normalization provenance JSON")
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -927,7 +1025,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         payload = json.loads(args.result.read_text(encoding="utf-8"))
         request = json.loads(args.request.read_text(encoding="utf-8"))
-        validate_design_result(payload, request)
+        raw_request = json.loads(args.raw_request.read_text(encoding="utf-8"))
+        normalization_report = json.loads(args.normalization_report.read_text(encoding="utf-8"))
+        validate_design_result(
+            payload,
+            request,
+            raw_request=raw_request,
+            normalization_report=normalization_report,
+        )
     except (OSError, json.JSONDecodeError, DesignValidationError, TypeError, ValueError) as error:
         print(f"❌ Loop design validation failed: {error}", file=sys.stderr)
         return 1

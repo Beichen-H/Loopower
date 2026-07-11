@@ -7,7 +7,8 @@ import json
 import unittest
 from pathlib import Path
 
-from validate_design_result import DesignValidationError, validate_design_result
+from normalize_design_request import normalize_design_request
+from validate_design_result import DesignValidationError, validate_design_result as _validate_design_result
 
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -23,15 +24,27 @@ def load_request(name: str) -> dict:
     return json.loads((REQUESTS / name).read_text(encoding="utf-8"))
 
 
+def validate_design_result(payload: dict, raw_request: dict) -> None:
+    effective_request, report = normalize_design_request(raw_request)
+    _validate_design_result(
+        payload,
+        effective_request,
+        raw_request=raw_request,
+        normalization_report=report,
+    )
+
+
 def minimal_request(**capability_overrides: object) -> dict:
     capabilities = {
         "available_tools": [],
+        "tool_access_modes": {},
         "durable_state": False,
         "checkpoint_resume": False,
         "sandbox": False,
         "human_interrupt": False,
         "parallel_execution": False,
         "subagents": False,
+        "required_subagent_reasoning_intensity": None,
     }
     capabilities.update(capability_overrides)
     return {
@@ -50,12 +63,41 @@ def minimal_request(**capability_overrides: object) -> dict:
             "forbidden_actions": [],
             "approval_rules": [],
         },
-        "budget_envelope": {},
+        "budget_envelope": {
+            "max_runtime_seconds": 900,
+            "max_iterations": 3,
+            "max_token_budget": 45000,
+            "max_no_progress_loops": 1,
+        },
         "output_requirements": {},
     }
 
 
 class DesignResultValidationTests(unittest.TestCase):
+    def test_rejects_tampered_effective_request(self) -> None:
+        request = minimal_request()
+        effective, report = normalize_design_request(request)
+        effective["budget_envelope"] = {}
+        with self.assertRaisesRegex(DesignValidationError, "does not match deterministic normalization"):
+            _validate_design_result(
+                load_example("one_shot.json"),
+                effective,
+                raw_request=request,
+                normalization_report=report,
+            )
+
+    def test_rejects_tampered_normalization_report(self) -> None:
+        raw_request = load_request("one_shot.json")
+        effective, report = normalize_design_request(raw_request)
+        report["raw_request_hash"] = "sha256:" + "0" * 64
+        with self.assertRaisesRegex(DesignValidationError, "normalization report does not match"):
+            _validate_design_result(
+                load_example("one_shot.json"),
+                effective,
+                raw_request=raw_request,
+                normalization_report=report,
+            )
+
     def test_all_published_examples_are_valid_against_matching_requests(self) -> None:
         expected = {
             "one_shot.json": "one_shot",
@@ -294,16 +336,92 @@ class DesignResultValidationTests(unittest.TestCase):
                 node["role"] = "reviewer"
                 node["allowed_tools"] = ["edit_files"]
         payload["loop_spec"]["tools"]["contracts"].append(
-            {"id": "edit_files", "side_effect": "workspace_write", "controller_executes": True}
+            {
+                "id": "edit_files",
+                "side_effect": "workspace_write",
+                "access_mode": "workspace_write",
+                "controller_executes": True,
+            }
         )
         request = load_request("agent_loop.json")
         request["runtime_capabilities"]["available_tools"].append("edit_files")
+        request["runtime_capabilities"]["tool_access_modes"]["edit_files"] = "workspace_write"
         request["policy_constraints"]["allowed_side_effects"].append("workspace_write")
         payload["loop_spec"]["runtime_binding"]["capabilities_snapshot"] = copy.deepcopy(
             request["runtime_capabilities"]
         )
 
         with self.assertRaisesRegex(DesignValidationError, "read-only"):
+            validate_design_result(payload, request)
+
+    def test_rejects_reviewer_with_indirect_shell_write_capability(self) -> None:
+        payload = load_example("agent_loop.json")
+        for node in payload["loop_spec"]["control_flow"]["nodes"]:
+            if node["id"] == "observe_evidence":
+                node["role"] = "reviewer"
+                node["allowed_tools"] = ["shell_command"]
+        payload["loop_spec"]["tools"]["contracts"].append(
+            {
+                "id": "shell_command",
+                "side_effect": "workspace_write",
+                "access_mode": "workspace_write",
+                "controller_executes": True,
+            }
+        )
+        request = load_request("agent_loop.json")
+        request["runtime_capabilities"]["available_tools"].append("shell_command")
+        request["runtime_capabilities"]["tool_access_modes"]["shell_command"] = "workspace_write"
+        request["policy_constraints"]["allowed_side_effects"].append("workspace_write")
+        payload["loop_spec"]["runtime_binding"]["capabilities_snapshot"] = copy.deepcopy(
+            request["runtime_capabilities"]
+        )
+
+        with self.assertRaisesRegex(DesignValidationError, "non-read-only tools"):
+            validate_design_result(payload, request)
+
+    def test_defaulted_budget_threshold_sources_are_enforced(self) -> None:
+        raw_request = load_request("agent_loop.json")
+        for field in [
+            "max_runtime_seconds",
+            "max_iterations",
+            "max_token_budget",
+            "max_no_progress_loops",
+        ]:
+            del raw_request["budget_envelope"][field]
+        effective, report = normalize_design_request(raw_request)
+        payload = load_example("agent_loop.json")
+        for threshold in payload["loop_spec"]["threshold_register"]:
+            if threshold["id"] in report["defaults_applied"]:
+                threshold["value"] = effective["budget_envelope"][threshold["id"]]
+                threshold["source"] = "default_policy:codex-native-safe-v1"
+        _validate_design_result(
+            payload,
+            effective,
+            raw_request=raw_request,
+            normalization_report=report,
+        )
+
+        for threshold in payload["loop_spec"]["threshold_register"]:
+            if threshold["id"] == "max_iterations":
+                threshold["source"] = "user_explicit"
+        with self.assertRaisesRegex(DesignValidationError, "source must be"):
+            _validate_design_result(
+                payload,
+                effective,
+                raw_request=raw_request,
+                normalization_report=report,
+            )
+
+    def test_subagent_requirement_needs_extended_reasoning(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["runtime_capabilities"]["subagents"] = True
+        payload["loop_spec"]["runtime_binding"]["capabilities_snapshot"] = copy.deepcopy(
+            request["runtime_capabilities"]
+        )
+        payload["loop_spec"]["runtime_binding"]["required_capabilities"]["subagents"] = True
+
+        with self.assertRaisesRegex(DesignValidationError, "extended_thought"):
             validate_design_result(payload, request)
 
     def test_rejects_implementer_as_mandatory_evaluator(self) -> None:
@@ -317,7 +435,7 @@ class DesignResultValidationTests(unittest.TestCase):
             "evaluator_node"
         ] = "choose_next_action"
 
-        with self.assertRaisesRegex(DesignValidationError, "implementer"):
+        with self.assertRaisesRegex(DesignValidationError, "reviewer or verifier"):
             validate_design_result(payload, load_request("agent_loop.json"))
 
 

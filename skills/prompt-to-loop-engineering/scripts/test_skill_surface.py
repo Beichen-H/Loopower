@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -52,10 +53,13 @@ class SkillSurfaceTests(unittest.TestCase):
             "schemas/loop_spec.schema.json",
             "schemas/agent_manifest.schema.json",
             "schemas/guardrails.schema.json",
+            "schemas/progress_evidence.schema.json",
+            "schemas/normalization_report.schema.json",
             "scripts/validate_design_result.py",
             "scripts/validate_codex_loop_scaffold.py",
             "scripts/validate_dag_execution_evidence.py",
             "scripts/validate_loop_progress_evidence.py",
+            "scripts/normalize_design_request.py",
             "examples/one_shot.json",
             "examples/workflow.json",
             "examples/agent_loop.json",
@@ -99,7 +103,7 @@ class SkillSurfaceTests(unittest.TestCase):
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_phrases = [
             "MUST read `loop_spec.json`",
-            "MUST generate exactly one `loop_design_result`",
+            "generate exactly one `loop_design_result`",
             "MUST run `scripts/validate_design_result.py`",
             "MUST NOT emit `spec_ready` when validation fails",
         ]
@@ -113,9 +117,17 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `1.8.0`", skill)
-        self.assertIn("### v1.8.0 (2026-07-09)", readme)
-        self.assertIn("### v1.8.0 (2026-07-09)", readme_cn)
+        self.assertIn("**Skill version:** `2.0.0`", skill)
+        self.assertIn("### v2.0.0 (2026-07-10)", readme)
+        self.assertIn("### v2.0.0 (2026-07-10)", readme_cn)
+        self.assertEqual(
+            json.loads((SKILL_ROOT / "loop_spec.json").read_text(encoding="utf-8"))["skill_version"],
+            "2.0.0",
+        )
+        manifest = json.loads(
+            (SKILL_ROOT / "examples" / "codex-loop" / "agent_manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["created_by_skill"]["version"], "2.0.0")
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -267,6 +279,20 @@ class SkillSurfaceTests(unittest.TestCase):
         ]
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing v1.8 governance phrases: {missing}")
+
+    def test_request_normalization_and_budget_provenance_are_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "v2.0.0 — Release-Hardened Contract Alignment",
+            "scripts/normalize_design_request.py",
+            "codex-native-safe-v1",
+            "raw_request_hash",
+            "effective_request_hash",
+            "elapsed_runtime_seconds",
+            "cumulative_token_count",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing v2 normalization phrases: {missing}")
 
     def test_defensive_designing_fallback_contract_is_documented(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -557,6 +583,39 @@ class SkillSurfaceTests(unittest.TestCase):
             )
             self.assertIn("DRY RUN", result.stdout)
             self.assertFalse(target_root.exists(), "Dry run must not create target directory")
+
+    def test_published_loop_specs_cover_schema_root_requirements(self) -> None:
+        schema = json.loads((SKILL_ROOT / "schemas" / "loop_spec.schema.json").read_text(encoding="utf-8"))
+        required = set(schema["required"])
+        node_required = set(schema["$defs"]["node"]["required"])
+        self.assertNotIn("execution_governance", required)
+        documents = {
+            "self": json.loads((SKILL_ROOT / "loop_spec.json").read_text(encoding="utf-8")),
+            "workflow": json.loads((SKILL_ROOT / "examples" / "workflow.json").read_text(encoding="utf-8"))["loop_spec"],
+            "agent_loop": json.loads((SKILL_ROOT / "examples" / "agent_loop.json").read_text(encoding="utf-8"))["loop_spec"],
+        }
+        for name, spec in documents.items():
+            missing = required - set(spec)
+            self.assertEqual(missing, set(), f"{name} misses LoopSpec schema fields: {sorted(missing)}")
+            for node in spec["control_flow"]["nodes"]:
+                node_missing = node_required - set(node)
+                self.assertEqual(node_missing, set(), f"{name}/{node.get('id')} misses node fields: {sorted(node_missing)}")
+
+    def test_effective_request_capabilities_match_schema_requirements(self) -> None:
+        schema = json.loads((SKILL_ROOT / "schemas" / "loop_design_request.schema.json").read_text(encoding="utf-8"))
+        required = set(schema["properties"]["runtime_capabilities"]["required"])
+        for path in (SKILL_ROOT / "examples" / "requests").glob("*.json"):
+            request = json.loads(path.read_text(encoding="utf-8"))
+            missing = required - set(request["runtime_capabilities"])
+            self.assertEqual(missing, set(), f"{path.name} misses capability fields: {sorted(missing)}")
+
+    def test_progress_examples_match_v2_schema_surface(self) -> None:
+        schema = json.loads((SKILL_ROOT / "schemas" / "progress_evidence.schema.json").read_text(encoding="utf-8"))
+        required = set(schema["required"])
+        for path in (SKILL_ROOT / "examples" / "codex-loop" / "evidence" / "progress").glob("*.json"):
+            sample = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(set(sample), required, f"{path.name} does not match progress schema surface")
+            self.assertEqual(sample["schema_version"], "2.0.0")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,17 @@
     },
     "runtime_capabilities": {
       "type": "object",
+      "required": [
+        "available_tools",
+        "tool_access_modes",
+        "durable_state",
+        "checkpoint_resume",
+        "sandbox",
+        "human_interrupt",
+        "parallel_execution",
+        "subagents",
+        "required_subagent_reasoning_intensity"
+      ],
       "properties": {
         "available_tools": {
           "type": "array",
@@ -35,6 +46,12 @@
             "minLength": 1
           },
           "uniqueItems": true
+        },
+        "tool_access_modes": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": ["read_only", "workspace_write", "external_write"]
+          }
         },
         "durable_state": { "type": "boolean", "default": false },
         "checkpoint_resume": { "type": "boolean", "default": false },
@@ -71,6 +88,7 @@
     },
     "budget_envelope": {
       "type": "object",
+      "description": "Strict effective-request budget. Raw requests may omit these values only before deterministic normalization by scripts/normalize_design_request.py.",
       "required": [
         "max_runtime_seconds",
         "max_iterations",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import shutil
 import subprocess
 import sys
@@ -50,6 +51,7 @@ class LoopProgressEvidenceTests(unittest.TestCase):
             for iteration in [2, 3]:
                 clone = dict(first)
                 clone["iteration"] = iteration
+                clone["cycle_iteration"] = iteration
                 clone["new_evidence_count"] = 0
                 (progress / f"iteration_{iteration}.json").write_text(
                     json.dumps(clone, indent=2),
@@ -69,6 +71,121 @@ class LoopProgressEvidenceTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("progress evidence directory must contain", result.stdout)
+
+    def test_exceeding_iteration_limit_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            spec_path = root / "loop_spec.json"
+            spec = json.loads(spec_path.read_text(encoding="utf-8"))
+            for threshold in spec["threshold_register"]:
+                if threshold["id"] == "max_iterations":
+                    threshold["value"] = 1
+            spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("max_iterations exceeded", result.stdout)
+
+    def test_exceeding_runtime_limit_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            sample_path = root / "evidence" / "progress" / "iteration_2.json"
+            sample = json.loads(sample_path.read_text(encoding="utf-8"))
+            sample["elapsed_runtime_seconds"] = 901
+            sample_path.write_text(json.dumps(sample), encoding="utf-8")
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("max_runtime_seconds exceeded", result.stdout)
+
+    def test_exceeding_token_limit_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            sample_path = root / "evidence" / "progress" / "iteration_2.json"
+            sample = json.loads(sample_path.read_text(encoding="utf-8"))
+            sample["cumulative_token_count"] = 45001
+            sample_path.write_text(json.dumps(sample), encoding="utf-8")
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("max_token_budget exceeded", result.stdout)
+
+    def test_missing_budget_observation_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            sample_path = root / "evidence" / "progress" / "iteration_2.json"
+            sample = json.loads(sample_path.read_text(encoding="utf-8"))
+            del sample["cumulative_token_count"]
+            sample_path.write_text(json.dumps(sample), encoding="utf-8")
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("progress fields must exactly match", result.stdout)
+
+    def test_rejects_legacy_progress_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            sample_path = root / "evidence" / "progress" / "iteration_1.json"
+            sample = json.loads(sample_path.read_text(encoding="utf-8"))
+            sample["schema_version"] = "1.0.0"
+            sample_path.write_text(json.dumps(sample), encoding="utf-8")
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("schema_version must be 2.0.0", result.stdout)
+
+    def test_rejects_undeclared_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            sample_path = root / "evidence" / "progress" / "iteration_1.json"
+            sample = json.loads(sample_path.read_text(encoding="utf-8"))
+            sample["cycle_id"] = "invented_cycle"
+            sample_path.write_text(json.dumps(sample), encoding="utf-8")
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("undeclared cycle", result.stdout)
+
+    def test_rejects_non_contiguous_run_iterations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            sample_path = root / "evidence" / "progress" / "iteration_2.json"
+            sample = json.loads(sample_path.read_text(encoding="utf-8"))
+            sample["iteration"] = 3
+            sample["cycle_iteration"] = 3
+            sample_path.write_text(json.dumps(sample), encoding="utf-8")
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("must be contiguous from 1", result.stdout)
+
+    def test_multiple_declared_cycles_are_isolated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            spec_path = root / "loop_spec.json"
+            spec = json.loads(spec_path.read_text(encoding="utf-8"))
+            second_cycle = copy.deepcopy(spec["control_flow"]["cycles"][0])
+            second_cycle["id"] = "secondary_cycle"
+            spec["control_flow"]["cycles"].append(second_cycle)
+            spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+            progress = root / "evidence" / "progress"
+            sample = json.loads((progress / "iteration_2.json").read_text(encoding="utf-8"))
+            sample.update(
+                {
+                    "cycle_id": "secondary_cycle",
+                    "iteration": 3,
+                    "cycle_iteration": 1,
+                    "elapsed_runtime_seconds": 300,
+                    "cumulative_token_count": 20000,
+                    "artifact_hash": "sha256:" + "e" * 64,
+                    "diff_fingerprint": "sha256:" + "f" * 64,
+                }
+            )
+            (progress / "iteration_3.json").write_text(json.dumps(sample), encoding="utf-8")
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 0, result.stdout)
 
 
 if __name__ == "__main__":

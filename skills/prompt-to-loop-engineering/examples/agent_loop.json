@@ -28,8 +28,8 @@
       "rationale": "Each controller-validated observation can change the model's proposed next diagnostic action, requiring a bounded agent loop."
     },
     "runtime_binding": {
-      "capabilities_snapshot": {"available_tools": ["read_observation"], "durable_state": false, "checkpoint_resume": false, "sandbox": false, "human_interrupt": false, "parallel_execution": false, "subagents": false},
-      "required_capabilities": {"available_tools": ["read_observation"]},
+      "capabilities_snapshot": {"available_tools": ["read_observation"], "tool_access_modes": {"read_observation": "read_only"}, "durable_state": false, "checkpoint_resume": false, "sandbox": false, "human_interrupt": false, "parallel_execution": false, "subagents": false, "required_subagent_reasoning_intensity": null},
+      "required_capabilities": {"available_tools": ["read_observation"], "tool_access_modes": {"read_observation": "read_only"}},
       "capability_mismatches": []
     },
     "state": {
@@ -91,7 +91,7 @@
       "fallback_node": "export_stopped"
     },
     "tools": {
-      "contracts": [{"id": "read_observation", "side_effect": "none", "controller_executes": true}],
+      "contracts": [{"id": "read_observation", "side_effect": "none", "access_mode": "read_only", "controller_executes": true}],
       "rollback_procedures": [],
       "permission_bindings": [{"tool": "read_observation", "scope": "request-authorized observations only"}],
       "side_effect_policies": []

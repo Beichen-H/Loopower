@@ -31,7 +31,7 @@
       "rationale": "All paths and branches are fixed before execution and require no environment-driven replanning."
     },
     "runtime_binding": {
-      "capabilities_snapshot": {"available_tools": [], "durable_state": false, "checkpoint_resume": false, "sandbox": false, "human_interrupt": false, "parallel_execution": false, "subagents": false},
+      "capabilities_snapshot": {"available_tools": [], "tool_access_modes": {}, "durable_state": false, "checkpoint_resume": false, "sandbox": false, "human_interrupt": false, "parallel_execution": false, "subagents": false, "required_subagent_reasoning_intensity": null},
       "required_capabilities": {},
       "capability_mismatches": []
     },

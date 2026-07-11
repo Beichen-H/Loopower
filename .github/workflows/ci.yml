@@ -21,6 +21,12 @@ jobs:
       - name: Run unit tests
         run: python -B -m unittest discover -s skills/prompt-to-loop-engineering/scripts -p "test_*.py" -v
 
+      - name: Parse published JSON contracts
+        shell: bash
+        run: |
+          find skills/prompt-to-loop-engineering -name '*.json' -print0 \
+            | xargs -0 -n1 python -m json.tool >/dev/null
+
       - name: Validate bundled scaffold
         run: python -B skills/prompt-to-loop-engineering/scripts/validate_codex_loop_scaffold.py skills/prompt-to-loop-engineering/examples/codex-loop
 
@@ -34,4 +40,15 @@ jobs:
         run: python -B skills/prompt-to-loop-engineering/scripts/test_spec_loading.py
 
       - name: Validate published agent-loop example
-        run: python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py skills/prompt-to-loop-engineering/examples/agent_loop.json --request skills/prompt-to-loop-engineering/examples/requests/agent_loop.json
+        shell: bash
+        run: |
+          mkdir -p .ci
+          python -B skills/prompt-to-loop-engineering/scripts/normalize_design_request.py \
+            skills/prompt-to-loop-engineering/examples/requests/agent_loop.json \
+            --output .ci/effective-agent-loop-request.json \
+            --report .ci/agent-loop-normalization-report.json
+          python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
+            skills/prompt-to-loop-engineering/examples/agent_loop.json \
+            --request .ci/effective-agent-loop-request.json \
+            --raw-request skills/prompt-to-loop-engineering/examples/requests/agent_loop.json \
+            --normalization-report .ci/agent-loop-normalization-report.json

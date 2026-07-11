@@ -2,7 +2,7 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `1.8.0`: a Codex-native Loop Agent Builder, Live Subagent Bridge, Cooperative Governance Overlay, Model Configuration Inheritance Contract, Evidence-Locked DAG Execution Governance layer, and Role-Isolated Governance contract. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and defines how Codex should coordinate approval, scaffold lifecycle, host-native live sub-agent activation, sub-agent reasoning intensity alignment, role-isolated verification, and post-hoc evidence validation without taking exclusive control of the session.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `2.0.0`: a Codex-native Loop Agent Builder with verified request normalization, budget provenance, Evidence-Locked DAG Execution Governance, access-mode-based reviewer isolation, and versioned multi-cycle progress evidence. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and governs approval, host-native live sub-agent activation, and post-hoc evidence validation without taking exclusive control of the session.
 
 This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
 
@@ -315,10 +315,23 @@ python -B skills/prompt-to-loop-engineering/scripts/test_spec_loading.py
 
 Validate published design-result examples:
 
+Normalize an incomplete raw request before design validation:
+
+```bash
+python skills/prompt-to-loop-engineering/scripts/normalize_design_request.py \
+  path/to/raw_request.json \
+  --output path/to/effective_request.json \
+  --report path/to/request_normalization_report.json
+```
+
+The source file is never modified. Missing limits use the versioned `codex-native-safe-v1` profile; invalid explicit values fail instead of being replaced. Use the effective request in the validation command below.
+
 ```bash
 python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
-  skills/prompt-to-loop-engineering/examples/agent_loop.json \
-  --request skills/prompt-to-loop-engineering/examples/requests/agent_loop.json
+  path/to/loop_design_result.json \
+  --request path/to/effective_request.json \
+  --raw-request path/to/raw_request.json \
+  --normalization-report path/to/request_normalization_report.json
 ```
 
 ## License
@@ -326,6 +339,23 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v2.0.0 (2026-07-10)
+
+- Made raw/effective request hashes and normalization provenance mandatory validator inputs.
+- Unified capability Schema and Validator handling, including `required_subagent_reasoning_intensity`.
+- Separated design-only LoopSpec requirements from GO-phase scaffold governance requirements.
+- Replaced reviewer tool-name blacklists with declared `access_mode` enforcement.
+- Added `progress_evidence.schema.json` v2 with run/cycle identity, contiguous sequences, authoritative counters, and multi-cycle isolation.
+- Added release-surface regression tests and stricter CI gates.
+
+### v1.9.0 (2026-07-10)
+
+- Added `scripts/normalize_design_request.py` to materialize strict effective requests without mutating raw user input.
+- Added the versioned `codex-native-safe-v1` budget profile: 900 seconds, 3 iterations, 45,000 tokens, and 1 no-progress loop.
+- Added deterministic normalization provenance with raw/effective hashes and explicit/defaulted field records.
+- Kept `validate_design_result.py` fail-closed and free of implicit repair behavior.
+- Extended `validate_loop_progress_evidence.py` to enforce runtime, iteration, token, and no-progress limits from persisted LoopSpec thresholds.
 
 ### v1.8.0 (2026-07-09)
 

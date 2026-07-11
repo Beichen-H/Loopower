@@ -1,10 +1,17 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "evidence_type": "progress_sample",
+  "run_id": "example-run-001",
   "cycle_id": "bounded_plan_execute_cycle",
   "iteration": 1,
-  "artifact_hash": "sha256:plan-v1",
-  "diff_fingerprint": "sha256:diff-v1",
+  "cycle_iteration": 1,
+  "observed_at": "2026-07-10T12:00:00Z",
+  "measurement_source": "controller_counter",
+  "token_count_quality": "authoritative",
+  "elapsed_runtime_seconds": 120,
+  "cumulative_token_count": 9000,
+  "artifact_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "diff_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "test_count": 0,
   "new_evidence_count": 1
 }

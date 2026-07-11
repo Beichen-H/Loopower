@@ -10,7 +10,6 @@
     "task_contract_ref",
     "architecture",
     "runtime_binding",
-    "execution_governance",
     "state",
     "context",
     "control_flow",
@@ -88,12 +87,13 @@
       "required": ["capabilities_snapshot", "required_capabilities", "capability_mismatches"],
       "properties": {
         "capabilities_snapshot": { "$ref": "loop_design_request.schema.json#/properties/runtime_capabilities" },
-        "required_capabilities": { "$ref": "loop_design_request.schema.json#/properties/runtime_capabilities" },
+        "required_capabilities": { "$ref": "#/$defs/capability_requirements" },
         "capability_mismatches": { "type": "array", "maxItems": 0 }
       },
       "additionalProperties": false
     },
     "execution_governance": {
+      "description": "Required for persisted GO-phase .codex-loop scaffolds and optional for design-only LoopSpecs. The scaffold validator enforces it before execution.",
       "type": "object",
       "required": [
         "runtime_mode",
@@ -184,7 +184,20 @@
       "additionalProperties": false
     },
     "transition_policy": { "type": "object" },
-    "tools": { "type": "object" },
+    "tools": {
+      "type": "object",
+      "required": ["contracts", "rollback_procedures", "permission_bindings", "side_effect_policies"],
+      "properties": {
+        "contracts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tool_contract" }
+        },
+        "rollback_procedures": { "type": "array" },
+        "permission_bindings": { "type": "array" },
+        "side_effect_policies": { "type": "array" }
+      },
+      "additionalProperties": false
+    },
     "evaluation": {
       "type": "object",
       "properties": {
@@ -220,6 +233,44 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "capability_requirements": {
+      "type": "object",
+      "properties": {
+        "available_tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "tool_access_modes": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": ["read_only", "workspace_write", "external_write"]
+          }
+        },
+        "durable_state": { "type": "boolean" },
+        "checkpoint_resume": { "type": "boolean" },
+        "sandbox": { "type": "boolean" },
+        "human_interrupt": { "type": "boolean" },
+        "parallel_execution": { "type": "boolean" },
+        "subagents": { "type": "boolean" },
+        "required_subagent_reasoning_intensity": {
+          "type": ["string", "null"],
+          "enum": ["extended_thought", null]
+        }
+      },
+      "additionalProperties": false
+    },
+    "tool_contract": {
+      "type": "object",
+      "required": ["id", "side_effect", "access_mode", "controller_executes"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "side_effect": { "type": "string", "minLength": 1 },
+        "access_mode": { "enum": ["read_only", "workspace_write", "external_write"] },
+        "controller_executes": { "const": true }
+      },
+      "additionalProperties": true
+    },
     "node": {
       "type": "object",
       "required": [

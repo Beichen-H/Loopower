@@ -192,6 +192,37 @@ def validate_loop_spec(loop_spec: dict[str, Any]) -> None:
         isinstance(required_capabilities, dict),
         "loop_spec.runtime_binding.required_capabilities must be an object",
     )
+    available_tools = capabilities_snapshot.get("available_tools")
+    tool_access_modes = capabilities_snapshot.get("tool_access_modes")
+    require(isinstance(available_tools, list), "capabilities_snapshot.available_tools must be an array")
+    require(isinstance(tool_access_modes, dict), "capabilities_snapshot.tool_access_modes must be an object")
+    require(
+        set(tool_access_modes) == set(available_tools),
+        "capabilities_snapshot.tool_access_modes must classify every available tool exactly once",
+    )
+    require(
+        all(mode in {"read_only", "workspace_write", "external_write"} for mode in tool_access_modes.values()),
+        "capabilities_snapshot.tool_access_modes contains an invalid mode",
+    )
+    required_tools = required_capabilities.get("available_tools", [])
+    required_modes = required_capabilities.get("tool_access_modes", {})
+    require(isinstance(required_tools, list), "required_capabilities.available_tools must be an array")
+    require(isinstance(required_modes, dict), "required_capabilities.tool_access_modes must be an object")
+    require(set(required_tools) <= set(available_tools), "required tools must be available")
+    require(set(required_modes) <= set(required_tools), "required tool access modes may classify only required tools")
+    require(
+        all(tool_access_modes.get(tool_id) == mode for tool_id, mode in required_modes.items()),
+        "required tool access modes must match the capability snapshot",
+    )
+    nodes = loop_spec.get("control_flow", {}).get("nodes", [])
+    for node in nodes:
+        if isinstance(node, dict) and node.get("role") in {"reviewer", "verifier"}:
+            non_read_only = [
+                tool_id
+                for tool_id in node.get("allowed_tools", [])
+                if tool_access_modes.get(tool_id) != "read_only"
+            ]
+            require(not non_read_only, f"reviewer/verifier node {node.get('id')!r} has non-read-only tools: {non_read_only}")
     if capabilities_snapshot.get("subagents") is True:
         require(
             capabilities_snapshot.get("required_subagent_reasoning_intensity") == "extended_thought",
