@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Release `prompt-to-loop-engineering` v3.0.0 with topology-derived professional subagents, no universal role-count ceiling, independent evaluator identity, and Codex-host-owned transition and termination decisions.
+**Goal:** Release `prompt-to-loop-engineering` v3.0.0 with topology-derived professional subagents, no universal role-count ceiling, independent evaluator identity, LoopSpec-owned transition policy, and policy-bound Codex-host enforcement.
 
 **Architecture:** LoopSpec becomes the design-stage source of truth through `delegation.agent_registry`; the scaffold Manifest mirrors that registry and adds host-lifecycle metadata. Nodes bind to professional agents through `agent_ref` while retaining a closed governance `role`. Reviewers emit evidence only, and the Codex host evaluates edge predicates and hard-stop conditions.
 
@@ -15,7 +15,7 @@
 - Do not add an independent Runtime Engine, daemon, queue, database, checkpoint service, or dynamic role factory.
 - Do not place a universal `maxItems` on subagents; each emitted Manifest remains a finite static array.
 - Professional ids are open-ended safe slugs; governance roles remain `planner`, `implementer`, `reviewer`, or `verifier`.
-- Only `codex_host_controller` selects edges, writes controller-owned state, and terminates a loop.
+- LoopSpec is the sole transition/termination policy authority; `codex_host_controller` only evaluates and enforces declared rules, writes controller-owned state, and must not invent edges or override thresholds.
 - README.md and README-CN.md must describe the same v3 behavior and boundaries.
 
 ---
@@ -83,7 +83,7 @@ Define each subagent with these required fields:
 
 Use lowercase ASCII slug pattern `^[a-z0-9]+(?:-[a-z0-9]+)*$`. Do not encode the path/id equality solely in JSON Schema; the Python validator owns that relational check.
 
-Define `termination_control` with constants `authority=codex_host_controller`, `reviewer_authority=evidence_only`, and `transition_policy=lower_first_then_first_match`. Replace transition `authority` with `decision_authority` and `proposal_mode`.
+Define `termination_control` with constants `policy_authority=loop_spec`, `evaluation_authority=codex_host_controller`, `reviewer_authority=evidence_only`, and `transition_policy=lower_first_then_first_match`. Replace transition `authority` with `decision_authority` and `proposal_mode`.
 
 - [ ] **Step 4: Run the targeted tests and parse both schemas**
 
