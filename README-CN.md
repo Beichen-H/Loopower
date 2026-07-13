@@ -217,6 +217,44 @@ agent_manifest.governance_overlay.host_linear_fulfillment_takeover = forbidden
 python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
 ```
 
+## 架构效能与边界评估
+
+这层治理不是通用性能加速器。对于输入固定、动作唯一且具有确定性校验的低熵简单任务，Codex 直接执行与经过验证的 `one_shot` 通常不会产生实质结果差异。启用完整设计链会为请求规范化、能力快照、Schema 校验和来源记录带来轻量的 Token 与延迟开销。因此应始终选择足够完成任务的最简单 disposition，不能因为具备循环能力就强行构造 agent loop。
+
+v2.0.0 不宣称可以普遍降低某个固定百分比的 Token、延迟或失败率。实际盈亏平衡点取决于任务熵、循环长度、工具成本，以及宿主执行持久化门禁的频率。
+
+当任务具有长周期、自适应、权限敏感或多角色协作特征时，这套架构的价值才会显现。v2.0.0 将原本可能开放式扩散的“不确定性灾难”转换为确定性的拒绝或熔断条件：预算显式化、停滞进展可测量、写入权与验收权相互隔离、原始请求到有效请求的转换可通过哈希追溯。它不保证用户任务必然成功；它限制失败扩散，并让停止原因可以被检查和复现。
+
+| 维度 | 裸奔（无治理）宿主执行 | v2.0.0 治理模式 |
+|---|---|---|
+| Token 行为 | 简单任务的启动成本最低，但缺少合同级上限，无法阻止重复规划或停滞循环持续消耗 Token。 | 增加前置规范化与校验开销；agent loop 显式声明最大运行时长、迭代次数、Token 预算和无进展轮数。严格 Token 熔断仍依赖宿主 API 或控制器持有的权威计数器。 |
+| 熔断能力 | 依赖模型或用户自行察觉停滞，退出行为可能只存在于自然语言上下文中。 | 确定性进展事实与四项刚性上限会让越界或连续无进展证据触发 validator 失败；除非 Codex 宿主在每个规定门禁运行 validator 并在失败时停止，否则该约束仍属于后验裁判。 |
+| 权限隔离 | 工具权限与角色边界可能隐含在会话上下文中。 | 能力快照把每个可用工具分类为 `read_only`、`workspace_write` 或 `external_write`；reviewer/verifier 只能绑定只读工具。这是合同级隔离，不是操作系统沙箱，也不会赋予任何新权限。 |
+| 哈希追溯 | Prompt 的重新解释与默认值注入在事后可能难以还原。 | Canonical SHA-256 哈希把保留的原始请求、独立的有效请求与版本化规范化报告绑定起来。哈希可以发现资产漂移，但不能证明外部证据或宿主上报的测量值一定真实。 |
+
+Normalizer 不修改原始请求，而是生成独立的有效请求与 Provenance 报告。符合 v2.0.0 合同的通用报告结构如下：
+
+```json
+{
+  "schema_version": "2.0.0",
+  "normalizer_version": "2.0.0",
+  "default_policy_id": "codex-native-safe-v1",
+  "raw_request_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "effective_request_hash": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+  "defaults_applied": {
+    "max_iterations": 3,
+    "max_token_budget": 45000,
+    "max_no_progress_loops": 1
+  },
+  "explicit_budget_fields": [
+    "max_runtime_seconds"
+  ],
+  "source_preserved": true
+}
+```
+
+`defaults_applied` 只包含原始请求中缺失的字段；`explicit_budget_fields` 记录调用者显式提供且通过校验的值。Validator 会重新计算两个哈希，并拒绝 raw/effective/report 三者不一致的输入。因此，该报告在保持用户原始输入不可变的同时，建立了可验证的转换来源链。
+
 ## 在 Codex 项目中使用
 
 安装后，在任意 Codex 项目中输入：

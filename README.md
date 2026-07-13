@@ -217,6 +217,44 @@ Use the post-hoc hard validator to reject missing activation, handoff, completio
 python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
 ```
 
+## Architectural Efficacy & Boundaries Evaluation
+
+This governance layer is not a universal performance accelerator. For a low-entropy task with a fixed input, one obvious action, and a deterministic check, direct Codex execution and a validated `one_shot` usually produce the same practical result. Activating the full design path adds a small token and latency cost for request normalization, capability snapshotting, schema validation, and provenance recording. Use the simplest sufficient disposition; do not build an agent loop merely because the machinery is available.
+
+v2.0.0 does not claim a universal percentage reduction in tokens, latency, or failures. The break-even point depends on task entropy, loop length, tool cost, and how often the host evaluates the persisted gates.
+
+The value changes when work is long-running, adaptive, permission-sensitive, or distributed across roles. In those cases, v2.0.0 converts an otherwise open-ended uncertainty failure into a deterministic refusal or circuit-break condition: budgets are explicit, stalled progress is measurable, write authority is separated from review, and raw-to-effective request changes are hash-addressed. This does not guarantee task success. It bounds failure and makes the reason for stopping inspectable.
+
+| Dimension | Ungoverned (`bare`) host execution | v2.0.0 governed execution |
+|---|---|---|
+| Token behavior | Minimal setup cost for simple tasks, but no contract-level ceiling prevents repeated replanning or stalled-loop token growth. | Adds front-loaded normalization and validation tokens; agent loops carry explicit runtime, iteration, token, and no-progress limits. Strict token enforcement still requires an authoritative host or controller-owned counter. |
+| Circuit breaking | Depends on the model or user noticing that work is stalled. Exit behavior may remain implicit. | Deterministic progress facts and four hard limits cause validation to fail on limit breaches or repeated no-progress evidence. Enforcement is post-hoc unless the Codex host runs the validator at each required gate and stops on failure. |
+| Permission isolation | Tool availability and role boundaries may remain implicit in conversation context. | The capability snapshot classifies each available tool as `read_only`, `workspace_write`, or `external_write`; reviewer/verifier nodes may bind only read-only tools. This is contractual isolation, not an operating-system sandbox or a grant of new permissions. |
+| Hash traceability | Prompt reinterpretation and default injection may be difficult to reconstruct after the fact. | Canonical SHA-256 hashes bind the preserved raw request and separate effective request to a versioned normalization report. Hashes reveal artifact drift; they do not prove that external evidence or host-reported measurements are truthful. |
+
+The normalizer emits a separate effective request and a provenance report without mutating the original request. A conforming report has this general shape:
+
+```json
+{
+  "schema_version": "2.0.0",
+  "normalizer_version": "2.0.0",
+  "default_policy_id": "codex-native-safe-v1",
+  "raw_request_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "effective_request_hash": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+  "defaults_applied": {
+    "max_iterations": 3,
+    "max_token_budget": 45000,
+    "max_no_progress_loops": 1
+  },
+  "explicit_budget_fields": [
+    "max_runtime_seconds"
+  ],
+  "source_preserved": true
+}
+```
+
+`defaults_applied` contains only fields absent from the raw request; `explicit_budget_fields` records valid values supplied by the caller. Validation recomputes both hashes and rejects raw/effective/report disagreement. The report therefore establishes transformation provenance while keeping user input immutable.
+
 ## Use in a Codex project
 
 After installation, open any project in Codex and ask:
