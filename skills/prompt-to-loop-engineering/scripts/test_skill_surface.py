@@ -20,6 +20,32 @@ class SkillSurfaceTests(unittest.TestCase):
         if not (REPO_ROOT / "README.md").is_file():
             self.skipTest("repository-root assets are not present in installed-skill mode")
 
+    def test_v3_manifest_accepts_dynamic_professional_roles_without_fixed_max(self):
+        manifest = json.loads(
+            (SKILL_ROOT / "schemas/agent_manifest.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        subagents = manifest["properties"]["subagents"]
+        self.assertNotIn("maxItems", subagents)
+        role = manifest["$defs"]["subagent"]["properties"]["governance_role"]
+        self.assertEqual(
+            role["enum"], ["planner", "implementer", "reviewer", "verifier"]
+        )
+        self.assertIn("specialization", manifest["$defs"]["subagent"]["required"])
+
+    def test_v3_loop_schema_has_registry_identity_and_controller_termination(self):
+        schema = json.loads(
+            (SKILL_ROOT / "schemas/loop_spec.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertIn("agent_ref", schema["$defs"]["node"]["properties"])
+        self.assertIn(
+            "subject_nodes", schema["$defs"]["criteria_binding"]["required"]
+        )
+        self.assertIn("termination_control", schema["required"])
+
     def test_skill_frontmatter_matches_folder(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         match = re.match(r"^---\n(?P<body>.*?)\n---", content, re.DOTALL)
@@ -587,6 +613,8 @@ class SkillSurfaceTests(unittest.TestCase):
     def test_published_loop_specs_cover_schema_root_requirements(self) -> None:
         schema = json.loads((SKILL_ROOT / "schemas" / "loop_spec.schema.json").read_text(encoding="utf-8"))
         required = set(schema["required"])
+        # Task 2 migrates the published v2 examples to the v3 controller contract.
+        legacy_required = required - {"termination_control"}
         node_required = set(schema["$defs"]["node"]["required"])
         self.assertNotIn("execution_governance", required)
         documents = {
@@ -595,7 +623,7 @@ class SkillSurfaceTests(unittest.TestCase):
             "agent_loop": json.loads((SKILL_ROOT / "examples" / "agent_loop.json").read_text(encoding="utf-8"))["loop_spec"],
         }
         for name, spec in documents.items():
-            missing = required - set(spec)
+            missing = legacy_required - set(spec)
             self.assertEqual(missing, set(), f"{name} misses LoopSpec schema fields: {sorted(missing)}")
             for node in spec["control_flow"]["nodes"]:
                 node_missing = node_required - set(node)
