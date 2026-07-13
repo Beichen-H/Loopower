@@ -1178,23 +1178,25 @@ def _validate_capability_usage(
     topology = architecture["topology"]
     parallel_used = topology["type"] == "parallel" or topology.get("parallel_mode") is not None
     _require(not parallel_used or capabilities["parallel_execution"], "parallel_execution is required by parallel topology")
-    worker_used = (
+    subagent_used = (
         topology["type"] == "orchestrator_workers"
         or "worker" in flow["node_kinds"].values()
         or spec["delegation"].get("enabled") is True
         or bool(spec["delegation"].get("worker_profiles"))
+        or bool(spec["delegation"].get("agent_registry"))
+        or any(agent_ref is not None for agent_ref in flow["node_agent_refs"].values())
     )
-    _require(not worker_used or capabilities["subagents"], "subagents capability is required by worker/delegation design")
-    if worker_used:
+    _require(not subagent_used or capabilities["subagents"], "subagents capability is required by agent/worker/delegation design")
+    if subagent_used:
         requirements = spec["runtime_binding"]["required_capabilities"]
-        _require(requirements.get("subagents") is True, "worker/delegation design must require subagents explicitly")
+        _require(requirements.get("subagents") is True, "agent/worker/delegation design must require subagents explicitly")
         _require(
             capabilities["required_subagent_reasoning_intensity"] == "extended_thought",
-            "worker/delegation design requires extended_thought in the capability snapshot",
+            "agent/worker/delegation design requires extended_thought in the capability snapshot",
         )
         _require(
             requirements.get("required_subagent_reasoning_intensity") == "extended_thought",
-            "worker/delegation design must require extended_thought explicitly",
+            "agent/worker/delegation design must require extended_thought explicitly",
         )
     sandbox_used = spec["runtime_binding"]["required_capabilities"].get("sandbox", False)
     _require(not sandbox_used or capabilities["sandbox"], "sandbox capability is required by the design")

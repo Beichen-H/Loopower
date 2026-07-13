@@ -16,8 +16,8 @@
     "sandbox": false,
     "human_interrupt": false,
     "parallel_execution": false,
-    "subagents": false,
-    "required_subagent_reasoning_intensity": null
+    "subagents": true,
+    "required_subagent_reasoning_intensity": "extended_thought"
   },
   "policy_constraints": {
     "allowed_side_effects": [],

@@ -208,6 +208,59 @@ class DesignResultValidationTests(unittest.TestCase):
 
         self.assertEqual(len(payload["loop_spec"]["delegation"]["agent_registry"]), 4)
 
+    def test_bound_agent_roles_require_subagent_capability_and_reasoning_contract(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["runtime_capabilities"]["subagents"] = True
+        request["runtime_capabilities"][
+            "required_subagent_reasoning_intensity"
+        ] = "extended_thought"
+        payload["loop_spec"]["runtime_binding"]["capabilities_snapshot"] = copy.deepcopy(
+            request["runtime_capabilities"]
+        )
+        requirements = payload["loop_spec"]["runtime_binding"]["required_capabilities"]
+        requirements["subagents"] = True
+        requirements["required_subagent_reasoning_intensity"] = "extended_thought"
+
+        cases = {
+            "runtime capability": ("subagents capability", lambda result, raw: (
+                raw["runtime_capabilities"].update({
+                    "subagents": False,
+                    "required_subagent_reasoning_intensity": None,
+                }),
+                result["loop_spec"]["runtime_binding"].update({
+                    "capabilities_snapshot": copy.deepcopy(raw["runtime_capabilities"])
+                }),
+                result["loop_spec"]["runtime_binding"]["required_capabilities"].pop("subagents"),
+                result["loop_spec"]["runtime_binding"]["required_capabilities"].pop(
+                    "required_subagent_reasoning_intensity"
+                ),
+            )),
+            "required capability": ("require subagents explicitly", lambda result, raw: (
+                result["loop_spec"]["runtime_binding"]["required_capabilities"].pop("subagents"),
+            )),
+            "snapshot reasoning": ("reasoning intensity is unavailable", lambda result, raw: (
+                raw["runtime_capabilities"].update({
+                    "required_subagent_reasoning_intensity": None
+                }),
+                result["loop_spec"]["runtime_binding"].update({
+                    "capabilities_snapshot": copy.deepcopy(raw["runtime_capabilities"])
+                }),
+            )),
+            "required reasoning": ("extended_thought", lambda result, raw: (
+                result["loop_spec"]["runtime_binding"]["required_capabilities"].pop(
+                    "required_subagent_reasoning_intensity"
+                ),
+            )),
+        }
+        for name, (message, mutate) in cases.items():
+            with self.subTest(name=name):
+                invalid_payload = copy.deepcopy(payload)
+                invalid_request = copy.deepcopy(request)
+                mutate(invalid_payload, invalid_request)
+                with self.assertRaisesRegex(DesignValidationError, message):
+                    validate_design_result(invalid_payload, invalid_request)
+
     def test_rejects_unknown_agent_ref(self) -> None:
         payload = four_agent_payload()
         payload["loop_spec"]["control_flow"]["nodes"][0]["agent_ref"] = "missing-specialist"
@@ -642,11 +695,15 @@ class DesignResultValidationTests(unittest.TestCase):
     def test_subagent_requirement_needs_extended_reasoning(self) -> None:
         payload = load_example("agent_loop.json")
         request = load_request("agent_loop.json")
-        request["runtime_capabilities"]["subagents"] = True
+        request["runtime_capabilities"][
+            "required_subagent_reasoning_intensity"
+        ] = None
         payload["loop_spec"]["runtime_binding"]["capabilities_snapshot"] = copy.deepcopy(
             request["runtime_capabilities"]
         )
-        payload["loop_spec"]["runtime_binding"]["required_capabilities"]["subagents"] = True
+        payload["loop_spec"]["runtime_binding"]["required_capabilities"][
+            "required_subagent_reasoning_intensity"
+        ] = None
 
         with self.assertRaisesRegex(DesignValidationError, "extended_thought"):
             validate_design_result(payload, request)
