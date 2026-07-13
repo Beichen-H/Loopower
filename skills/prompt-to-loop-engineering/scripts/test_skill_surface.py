@@ -147,17 +147,20 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `2.0.0`", skill)
+        self.assertIn("**Skill version:** `3.0.0`", skill)
+        self.assertIn("### v3.0.0 (2026-07-13)", readme)
+        self.assertIn("### v3.0.0 (2026-07-13)", readme_cn)
         self.assertIn("### v2.0.0 (2026-07-10)", readme)
         self.assertIn("### v2.0.0 (2026-07-10)", readme_cn)
-        self.assertEqual(
-            json.loads((SKILL_ROOT / "loop_spec.json").read_text(encoding="utf-8"))["skill_version"],
-            "2.0.0",
+        self_design = json.loads(
+            (SKILL_ROOT / "loop_spec.json").read_text(encoding="utf-8")
         )
+        self.assertEqual(self_design["skill_version"], "3.0.0")
+        self.assertEqual(self_design["spec_id"], "prompt-to-loop-engineering@3.0.0")
         manifest = json.loads(
             (SKILL_ROOT / "examples" / "codex-loop" / "agent_manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["created_by_skill"]["version"], "2.0.0")
+        self.assertEqual(manifest["created_by_skill"]["version"], "3.0.0")
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -429,6 +432,43 @@ class SkillSurfaceTests(unittest.TestCase):
                 "inline execution",
             ]:
                 self.assertIn(phrase, content)
+
+    def test_readmes_publish_dynamic_topology_and_authority_boundaries(self) -> None:
+        self.require_full_repository()
+        readmes = {
+            "README.md": (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+            "README-CN.md": (REPO_ROOT / "README-CN.md").read_text(
+                encoding="utf-8"
+            ),
+        }
+        required = [
+            "topology-derived professional roles",
+            "requirements-analyst",
+            "feature-engineer",
+            "test-verifier",
+            "security-auditor",
+            "not reserved roles",
+            "no universal declared-role ceiling",
+            "finite, statically validated",
+            "capability-bound concurrency",
+            "LoopSpec owns transition and termination policy",
+            "Codex host controller mechanically evaluates",
+            "reviewers and verifiers produce evidence only",
+            "v2-to-v3 migration",
+            "Manifest schema `2.0.0`",
+            "regenerate v2 scaffolds",
+        ]
+        forbidden = [
+            ".codex-loop/subagents/planner.md  -> planner live process",
+            ".codex-loop/subagents/executor.md -> executor live process",
+            "|   |-- planner.md",
+            "|   `-- executor.md",
+        ]
+        for name, content in readmes.items():
+            missing = [phrase for phrase in required if phrase not in content]
+            self.assertEqual(missing, [], f"{name} missing v3 guidance: {missing}")
+            stale = [phrase for phrase in forbidden if phrase in content]
+            self.assertEqual(stale, [], f"{name} has fixed-cast mappings: {stale}")
 
     def test_loop_spec_schema_and_example_log_subagent_reasoning_intensity(self) -> None:
         import json

@@ -1,9 +1,9 @@
 {
-  "spec_id": "prompt-to-loop-engineering@2.0.0",
+  "spec_id": "prompt-to-loop-engineering@3.0.0",
   "version": 1,
-  "skill_version": "2.0.0",
+  "skill_version": "3.0.0",
   "knowledge_contract": "loop-engineering-kb-v4.0.2",
-  "created_from_request": "release-hardened-contract-alignment-v2.0.0",
+  "created_from_request": "dynamic-subagent-topology-v3.0.0",
   "task_contract_ref": "prompt-to-loop-engineering-build@1",
   "contract_registry": {
     "Loop_design_request": "SKILL.md#input-contract-loop_design_request",
@@ -700,7 +700,7 @@
       "unit": "attempts",
       "source": "asset_policy",
       "rationale": "Allow one bounded correction for malformed structured output, then export a non-executable result.",
-      "calibration_scope": "prompt-to-loop-engineering v2.0.0",
+      "calibration_scope": "prompt-to-loop-engineering v3.0.0",
       "review_trigger": "measured malformed-output rate changes materially"
     },
     {

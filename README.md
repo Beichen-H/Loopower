@@ -2,7 +2,7 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `2.0.0`: a Codex-native Loop Agent Builder with verified request normalization, budget provenance, Evidence-Locked DAG Execution Governance, access-mode-based reviewer isolation, and versioned multi-cycle progress evidence. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and governs approval, host-native live sub-agent activation, and post-hoc evidence validation without taking exclusive control of the session.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `3.0.0`: a Codex-native Loop Agent Builder with topology-derived professional roles, verified request normalization, budget provenance, Evidence-Locked DAG Execution Governance, access-mode-based reviewer isolation, and versioned multi-cycle progress evidence. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and governs approval, host-native live sub-agent activation, and post-hoc evidence validation without taking exclusive control of the session.
 
 This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
 
@@ -15,7 +15,7 @@ This project does not contain an independent Runtime Engine. Codex is the host e
 - a `LoopSpec` with loop rules, priorities, budgets, progress signals, and exit paths;
 - an `agent_manifest.json` binding Codex to tools, knowledge sources, sub-agent prompts, and resume rules;
 - a `guardrails.json` file for forbidden commands, write boundaries, approval-required actions, and stop conditions;
-- compact sub-agent prompts such as `planner.md` and `executor.md`;
+- compact sub-agent prompts derived from the validated topology, such as `requirements-analyst.md` or `security-auditor.md`;
 - an optional `.status` file that stores only the current stage/node id;
 - an activation contract for aligning `.codex-loop/subagents/*.md` with the Codex host's Live Subagents Panel;
 - a non-exclusive governance overlay that keeps specialized skills available as host-resolved atomic capabilities;
@@ -133,13 +133,16 @@ Version `1.4.0` adds the `Agent Lifecycle Activation Contract`.
 
 After a user gives explicit `GO`, and after `.codex-loop/` has been written and validated, Codex must not treat the scaffold as passive text only. If the current Codex host exposes `spawn_subagent`, `spawn_agent`, or an equivalent native sub-agent lifecycle API, Codex must activate approved roles from `.codex-loop/subagents/` as live host processes.
 
-Each live role must use the corresponding local prompt file as its authoritative System Prompt baseline:
+Each live role must use the corresponding local prompt file as its authoritative System Prompt baseline. For example:
 
 ```text
-.codex-loop/subagents/planner.md  -> planner live process
-.codex-loop/subagents/executor.md -> executor live process
-.codex-loop/subagents/reviewer.md -> optional reviewer live process
+.codex-loop/subagents/requirements-analyst.md -> requirements-analysis node
+.codex-loop/subagents/feature-engineer.md     -> implementation node
+.codex-loop/subagents/test-verifier.md        -> test-verification node
+.codex-loop/subagents/security-auditor.md     -> security-review node
 ```
+
+These are illustrative professional ids, not reserved roles. The validated `delegation.agent_registry` determines the actual finite lineup for each task.
 
 If the active Codex host does not expose a native live sub-agent API, Codex must report `lifecycle_activation_blocked`. It must not emulate live sub-agents by creating queues, databases, daemons, or hidden Runtime Engine artifacts.
 
@@ -217,17 +220,35 @@ Use the post-hoc hard validator to reject missing activation, handoff, completio
 python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
 ```
 
+## Dynamic Professional Topology
+
+Version `3.0.0` replaces the fixed three-role cast with topology-derived professional roles. A generated LoopSpec may declare `requirements-analyst`, `feature-engineer`, `test-verifier`, `security-auditor`, or other task-specific identities. These names are examples and not reserved roles; authority comes from the closed `governance_role` classification and validated tool bindings, never from a professional id.
+
+There is no universal declared-role ceiling. Every generated registry and Manifest is nevertheless finite, statically validated, and closed for the approved GO phase. Declared team size does not imply simultaneous execution: capability-bound concurrency is limited by the normalized host lifecycle and parallel-execution capabilities. A newly needed specialist requires the host to pause, amend the scaffold, revalidate it, and obtain any required fresh approval before activation.
+
+The authority boundary is explicit: LoopSpec owns transition and termination policy. The Codex host controller mechanically evaluates declared predicates and hard stops, then selects only an eligible declared edge. Under this contract, reviewers and verifiers produce evidence only; they cannot select edges, change thresholds, write controller-owned state, or declare global completion.
+
+A representative generated prompt tree is:
+
+```text
+.codex-loop/subagents/
+|-- requirements-analyst.md
+|-- feature-engineer.md
+|-- test-verifier.md
+`-- security-auditor.md
+```
+
 ## Architectural Efficacy & Boundaries Evaluation
 
 This governance layer is not a universal performance accelerator. For a low-entropy task with a fixed input, one obvious action, and a deterministic check, direct Codex execution and a validated `one_shot` usually produce the same practical result. Activating the full design path adds a small token and latency cost for request normalization, capability snapshotting, schema validation, and provenance recording. Use the simplest sufficient disposition; do not build an agent loop merely because the machinery is available.
 
-v2.0.0 does not claim a universal percentage reduction in tokens, latency, or failures. The break-even point depends on task entropy, loop length, tool cost, and how often the host evaluates the persisted gates.
+v3.0.0 does not claim a universal percentage reduction in tokens, latency, or failures. The break-even point depends on task entropy, loop length, tool cost, declared agent count, and how often the host evaluates the persisted gates. Each additional professional prompt and lifecycle evidence stream adds measurable prompt, validation, and trace-storage overhead.
 
-The value changes when work is long-running, adaptive, permission-sensitive, or distributed across roles. In those cases, v2.0.0 converts an otherwise open-ended uncertainty failure into a deterministic refusal or circuit-break condition: budgets are explicit, stalled progress is measurable, write authority is separated from review, and raw-to-effective request changes are hash-addressed. This does not guarantee task success. It bounds failure and makes the reason for stopping inspectable.
+The value changes when work is long-running, adaptive, permission-sensitive, or distributed across roles. In those cases, v3.0.0 converts an otherwise open-ended uncertainty failure into a deterministic refusal or circuit-break condition: budgets are explicit, stalled progress is measurable, write authority is separated from review, and raw-to-effective request changes are hash-addressed. This does not guarantee task success. It bounds failure and makes the reason for stopping inspectable.
 
-| Dimension | Ungoverned (`bare`) host execution | v2.0.0 governed execution |
+| Dimension | Ungoverned (`bare`) host execution | v3.0.0 governed execution |
 |---|---|---|
-| Token behavior | Minimal setup cost for simple tasks, but no contract-level ceiling prevents repeated replanning or stalled-loop token growth. | Adds front-loaded normalization and validation tokens; agent loops carry explicit runtime, iteration, token, and no-progress limits. Strict token enforcement still requires an authoritative host or controller-owned counter. |
+| Token behavior | Minimal setup cost for simple tasks, but no contract-level ceiling prevents repeated replanning or stalled-loop token growth. | Adds front-loaded normalization, per-agent prompt, and evidence-validation tokens; agent loops carry explicit runtime, iteration, token, and no-progress limits. Strict token enforcement still requires an authoritative host or controller-owned counter. |
 | Circuit breaking | Depends on the model or user noticing that work is stalled. Exit behavior may remain implicit. | Deterministic progress facts and four hard limits cause validation to fail on limit breaches or repeated no-progress evidence. Enforcement is post-hoc unless the Codex host runs the validator at each required gate and stops on failure. |
 | Permission isolation | Tool availability and role boundaries may remain implicit in conversation context. | The capability snapshot classifies each available tool as `read_only`, `workspace_write`, or `external_write`; reviewer/verifier nodes may bind only read-only tools. This is contractual isolation, not an operating-system sandbox or a grant of new permissions. |
 | Hash traceability | Prompt reinterpretation and default injection may be difficult to reconstruct after the fact. | Canonical SHA-256 hashes bind the preserved raw request and separate effective request to a versioned normalization report. Hashes reveal artifact drift; they do not prove that external evidence or host-reported measurements are truthful. |
@@ -266,8 +287,7 @@ Analyze this project request and create a lightweight .codex-loop/ Agent Config 
 - .codex-loop/loop_spec.json
 - .codex-loop/agent_manifest.json
 - .codex-loop/guardrails.json
-- .codex-loop/subagents/planner.md
-- .codex-loop/subagents/executor.md
+- .codex-loop/subagents/<agent-id>.md for each registry entry
 - optional .codex-loop/.status
 - optional .codex-loop/evidence/ lifecycle stubs after GO-phase work begins
 
@@ -297,19 +317,15 @@ A valid scaffold has this minimal shape:
 |-- agent_manifest.json
 |-- guardrails.json
 |-- subagents/
-|   |-- planner.md
-|   `-- executor.md
+|   |-- requirements-analyst.md
+|   |-- feature-engineer.md
+|   |-- test-verifier.md
+|   `-- security-auditor.md
 |-- evidence/
 |   |-- activation/
 |   |-- handoff/
 |   `-- completion/
 `-- .status
-```
-
-Optional:
-
-```text
-.codex-loop/subagents/reviewer.md
 ```
 
 Validation rejects:
@@ -377,6 +393,18 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v3.0.0 (2026-07-13)
+
+- Replaced the fixed three-role ceiling with a finite, topology-derived professional `delegation.agent_registry`; professional ids are open-ended safe slugs and governance roles remain closed authority classes.
+- Upgraded the breaking Agent Manifest schema to `2.0.0` and required exact registry/Manifest lifecycle alignment through `agent_ref` bindings.
+- Added machine-checkable `subject_nodes` and independent `evaluator_node` identities for mandatory acceptance criteria.
+- Made LoopSpec the policy authority for transitions, hard stops, and terminal meanings; the Codex host is the policy-bound evaluator/enforcer and reviewers remain evidence-only.
+- Generalized prompt-file and lifecycle-evidence validation to arbitrary finite role lineups while keeping actual concurrency host-capability-bound.
+
+#### v2-to-v3 migration
+
+The v3 Skill/package uses Manifest schema `2.0.0`. Existing v2 scaffolds must be regenerated with v3 instead of having permissions inferred from legacy `planner`, `executor`, or `reviewer` names. Teams must regenerate v2 scaffolds so the LoopSpec supplies `delegation.agent_registry`, each governed node has an `agent_ref`, mandatory criteria declare independent `subject_nodes` and `evaluator_node` identities, and `termination_control` records policy-bound termination. Do not activate a migrated scaffold until the v3 scaffold, DAG evidence, and progress validators pass.
 
 ### v2.0.0 (2026-07-10)
 

@@ -5,7 +5,7 @@ description: Use when a natural-language task must be converted into a role-neut
 
 # Prompt to Loop Engineering
 
-**Skill version:** `2.0.0`
+**Skill version:** `3.0.0`
 **Normative contract:** Loop Engineering KB `v4.0.2`
 **Self-design graph:** [`loop_spec.json`](loop_spec.json)
 

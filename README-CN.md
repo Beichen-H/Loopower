@@ -2,7 +2,7 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `2.0.0`：它是具备可验证请求规范化、预算来源追踪、Evidence-Locked DAG Execution Governance、基于访问模式的审阅者隔离以及版本化多循环进展证据的 Codex-native Loop Agent Builder。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并在不独占会话路由的前提下治理审批、宿主原生 live sub-agent 激活与后验轨迹验证。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `3.0.0`：它是使用 topology-derived professional roles、具备可验证请求规范化、预算来源追踪、Evidence-Locked DAG Execution Governance、基于访问模式的审阅者隔离以及版本化多循环进展证据的 Codex-native Loop Agent Builder。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并在不独占会话路由的前提下治理审批、宿主原生 live sub-agent 激活与后验轨迹验证。
 
 本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
 
@@ -15,7 +15,7 @@
 - `LoopSpec`：循环规则、优先级、预算、进度信号和退出路径；
 - `agent_manifest.json`：绑定 Codex、工具、知识源、sub-agent prompts 和续跑规则；
 - `guardrails.json`：禁止命令、写入边界、需要审批的动作和停止条件；
-- 精简 sub-agent prompts，例如 `planner.md` 和 `executor.md`；
+- 从已验证拓扑推导出的精简 sub-agent prompts，例如 `requirements-analyst.md` 或 `security-auditor.md`；
 - 可选 `.status` 文件，只记录当前 stage/node id；
 - 用于对齐 `.codex-loop/subagents/*.md` 与 Codex 宿主 Live Subagents Panel 的激活合同；
 - non-exclusive 治理覆盖层，让 specialized skills 继续作为 host-resolved atomic capabilities 被使用；
@@ -133,13 +133,16 @@ cp skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/yo
 
 当用户显式给出 `GO`，并且 `.codex-loop/` 已经写入且验证通过后，Codex 不能只把 scaffold 当作纯文本。如果当前 Codex 宿主暴露 `spawn_subagent`、`spawn_agent` 或等效原生 sub-agent lifecycle API，Codex 必须把 `.codex-loop/subagents/` 下已批准的角色激活为 live host processes。
 
-每个 live role 必须使用对应本地 prompt 文件作为权威 System Prompt 基线：
+每个 live role 必须使用对应本地 prompt 文件作为权威 System Prompt 基线。例如：
 
 ```text
-.codex-loop/subagents/planner.md  -> planner live process
-.codex-loop/subagents/executor.md -> executor live process
-.codex-loop/subagents/reviewer.md -> optional reviewer live process
+.codex-loop/subagents/requirements-analyst.md -> requirements-analysis node
+.codex-loop/subagents/feature-engineer.md     -> implementation node
+.codex-loop/subagents/test-verifier.md        -> test-verification node
+.codex-loop/subagents/security-auditor.md     -> security-review node
 ```
+
+这些只是示例专业身份（not reserved roles），实际有限阵容由经过验证的 `delegation.agent_registry` 决定。
 
 如果当前 Codex 宿主没有原生 live sub-agent API，Codex 必须报告 `lifecycle_activation_blocked`。它不得通过创建队列、数据库、daemon 或隐藏 Runtime Engine artifact 来伪造 live sub-agent。
 
@@ -217,17 +220,35 @@ agent_manifest.governance_overlay.host_linear_fulfillment_takeover = forbidden
 python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
 ```
 
+## 动态专业角色拓扑
+
+版本 `3.0.0` 使用 topology-derived professional roles 替代固定三角色阵容。生成的 LoopSpec 可以声明 `requirements-analyst`、`feature-engineer`、`test-verifier`、`security-auditor` 或其他任务专用身份。这些名称只是示例、not reserved roles；权限来自闭合的 `governance_role` 分类与已验证的工具绑定，而不是专业 id。
+
+本合同设定 no universal declared-role ceiling，但每个生成的 registry 与 Manifest 都必须是 finite, statically validated，并在已批准的 GO 阶段保持闭合。声明的团队规模不代表同时执行；capability-bound concurrency 受规范化后的宿主生命周期能力与并行能力限制。如果需要新增专家，宿主必须暂停、修订 scaffold、重新验证，并在激活前取得任何必要的新批准。
+
+权责边界是确定的：LoopSpec owns transition and termination policy。Codex host controller mechanically evaluates 已声明的谓词与硬停止条件，并且只能选择满足条件的已声明边。reviewers and verifiers produce evidence only；它们不能选边、修改阈值、写入控制器状态或宣布全局完成。
+
+一个代表性的动态 prompt 树如下：
+
+```text
+.codex-loop/subagents/
+|-- requirements-analyst.md
+|-- feature-engineer.md
+|-- test-verifier.md
+`-- security-auditor.md
+```
+
 ## 架构效能与边界评估
 
 这层治理不是通用性能加速器。对于输入固定、动作唯一且具有确定性校验的低熵简单任务，Codex 直接执行与经过验证的 `one_shot` 通常不会产生实质结果差异。启用完整设计链会为请求规范化、能力快照、Schema 校验和来源记录带来轻量的 Token 与延迟开销。因此应始终选择足够完成任务的最简单 disposition，不能因为具备循环能力就强行构造 agent loop。
 
-v2.0.0 不宣称可以普遍降低某个固定百分比的 Token、延迟或失败率。实际盈亏平衡点取决于任务熵、循环长度、工具成本，以及宿主执行持久化门禁的频率。
+v3.0.0 不宣称可以普遍降低某个固定百分比的 Token、延迟或失败率。实际盈亏平衡点取决于任务熵、循环长度、工具成本、声明的 agent 数量，以及宿主执行持久化门禁的频率。每增加一个专业 prompt 与生命周期证据流，都会增加可测量的 prompt、验证与追踪存储开销。
 
-当任务具有长周期、自适应、权限敏感或多角色协作特征时，这套架构的价值才会显现。v2.0.0 将原本可能开放式扩散的“不确定性灾难”转换为确定性的拒绝或熔断条件：预算显式化、停滞进展可测量、写入权与验收权相互隔离、原始请求到有效请求的转换可通过哈希追溯。它不保证用户任务必然成功；它限制失败扩散，并让停止原因可以被检查和复现。
+当任务具有长周期、自适应、权限敏感或多角色协作特征时，这套架构的价值才会显现。v3.0.0 将原本可能开放式扩散的“不确定性灾难”转换为确定性的拒绝或熔断条件：预算显式化、停滞进展可测量、写入权与验收权相互隔离、原始请求到有效请求的转换可通过哈希追溯。它不保证用户任务必然成功；它限制失败扩散，并让停止原因可以被检查和复现。
 
-| 维度 | 裸奔（无治理）宿主执行 | v2.0.0 治理模式 |
+| 维度 | 裸奔（无治理）宿主执行 | v3.0.0 治理模式 |
 |---|---|---|
-| Token 行为 | 简单任务的启动成本最低，但缺少合同级上限，无法阻止重复规划或停滞循环持续消耗 Token。 | 增加前置规范化与校验开销；agent loop 显式声明最大运行时长、迭代次数、Token 预算和无进展轮数。严格 Token 熔断仍依赖宿主 API 或控制器持有的权威计数器。 |
+| Token 行为 | 简单任务的启动成本最低，但缺少合同级上限，无法阻止重复规划或停滞循环持续消耗 Token。 | 增加前置规范化、每个 agent prompt 与证据验证开销；agent loop 显式声明最大运行时长、迭代次数、Token 预算和无进展轮数。严格 Token 熔断仍依赖宿主 API 或控制器持有的权威计数器。 |
 | 熔断能力 | 依赖模型或用户自行察觉停滞，退出行为可能只存在于自然语言上下文中。 | 确定性进展事实与四项刚性上限会让越界或连续无进展证据触发 validator 失败；除非 Codex 宿主在每个规定门禁运行 validator 并在失败时停止，否则该约束仍属于后验裁判。 |
 | 权限隔离 | 工具权限与角色边界可能隐含在会话上下文中。 | 能力快照把每个可用工具分类为 `read_only`、`workspace_write` 或 `external_write`；reviewer/verifier 只能绑定只读工具。这是合同级隔离，不是操作系统沙箱，也不会赋予任何新权限。 |
 | 哈希追溯 | Prompt 的重新解释与默认值注入在事后可能难以还原。 | Canonical SHA-256 哈希把保留的原始请求、独立的有效请求与版本化规范化报告绑定起来。哈希可以发现资产漂移，但不能证明外部证据或宿主上报的测量值一定真实。 |
@@ -266,8 +287,7 @@ $prompt-to-loop-engineering
 - .codex-loop/loop_spec.json
 - .codex-loop/agent_manifest.json
 - .codex-loop/guardrails.json
-- .codex-loop/subagents/planner.md
-- .codex-loop/subagents/executor.md
+- 每个 registry entry 对应一个 .codex-loop/subagents/<agent-id>.md
 - 可选 .codex-loop/.status
 - 可选 .codex-loop/evidence/ lifecycle stubs，在 GO 阶段工作开始后记录证据
 
@@ -297,19 +317,15 @@ python skills/prompt-to-loop-engineering/scripts/validate_codex_loop_scaffold.py
 |-- agent_manifest.json
 |-- guardrails.json
 |-- subagents/
-|   |-- planner.md
-|   `-- executor.md
+|   |-- requirements-analyst.md
+|   |-- feature-engineer.md
+|   |-- test-verifier.md
+|   `-- security-auditor.md
 |-- evidence/
 |   |-- activation/
 |   |-- handoff/
 |   `-- completion/
 `-- .status
-```
-
-可选：
-
-```text
-.codex-loop/subagents/reviewer.md
 ```
 
 验证器会拒绝：
@@ -377,6 +393,18 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v3.0.0 (2026-07-13)
+
+- 用有限、由拓扑推导的 `delegation.agent_registry` 替代固定三角色上限；专业 id 是开放的安全 slug，治理角色仍是闭合的权限分类。
+- 将破坏性变更后的 Agent Manifest schema 升级为 `2.0.0`，并通过 `agent_ref` 强制 registry/Manifest 生命周期字段完全对齐。
+- 为强制验收标准新增机器可检验的 `subject_nodes` 和独立 `evaluator_node` 身份。
+- 明确 LoopSpec 是转换、硬停止与终止含义的策略权威；Codex 宿主是受策略约束的评估/执行者，reviewer 只产生证据。
+- 将 prompt 文件与生命周期证据验证推广到任意有限角色阵容，同时让实际并发继续受宿主能力限制。
+
+#### v2-to-v3 migration
+
+v3 Skill/package 使用 Manifest schema `2.0.0`。必须 regenerate v2 scaffolds，不能从旧的 `planner`、`executor` 或 `reviewer` 名称静默推断权限。重新生成后，LoopSpec 必须提供 `delegation.agent_registry`，每个受治理节点必须提供 `agent_ref`，强制标准必须声明相互独立的 `subject_nodes` 与 `evaluator_node`，并由 `termination_control` 记录受策略约束的终止合同。只有 v3 scaffold、DAG evidence 和 progress validator 全部通过后才能激活迁移后的 scaffold。
 
 ### v2.0.0 (2026-07-10)
 
