@@ -72,6 +72,11 @@ class SkillSurfaceTests(unittest.TestCase):
         )
 
     def test_runtime_free_contract_assets_exist(self) -> None:
+        manifest = json.loads(
+            (SKILL_ROOT / "examples/codex-loop/agent_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
         required = [
             "templates/agents-gate/AGENTS.md",
             "schemas/loop_design_request.schema.json",
@@ -99,18 +104,17 @@ class SkillSurfaceTests(unittest.TestCase):
             "examples/codex-loop/loop_spec.json",
             "examples/codex-loop/agent_manifest.json",
             "examples/codex-loop/guardrails.json",
-            "examples/codex-loop/subagents/planner.md",
-            "examples/codex-loop/subagents/executor.md",
-            "examples/codex-loop/evidence/activation/planner.json",
-            "examples/codex-loop/evidence/activation/executor.json",
-            "examples/codex-loop/evidence/handoff/planner_to_executor.json",
-            "examples/codex-loop/evidence/handoff/executor_to_terminal_export.json",
-            "examples/codex-loop/evidence/completion/planner.json",
-            "examples/codex-loop/evidence/completion/executor.json",
-            "examples/codex-loop/evidence/completion/terminal_export.json",
             "examples/codex-loop/evidence/progress/iteration_1.json",
             "examples/codex-loop/evidence/progress/iteration_2.json",
         ]
+        required.extend(
+            f"examples/codex-loop/subagents/{agent['id']}.md"
+            for agent in manifest["subagents"]
+        )
+        required.extend(
+            f"examples/codex-loop/{ref.removeprefix('.codex-loop/')}"
+            for ref in manifest["governance_overlay"]["required_evidence_refs"]
+        )
         if (REPO_ROOT / "README.md").is_file():
             required.append("../../examples/agents-gate/AGENTS.md")
         missing = [relative for relative in required if not (SKILL_ROOT / relative).is_file()]
@@ -332,12 +336,45 @@ class SkillSurfaceTests(unittest.TestCase):
             "non-empty artifact check and basic schema/static validation",
             "MUST NOT overwrite an existing same-name workspace file directly",
             "timestamped destination or a `.tmp/` staging directory",
-            "`planner.md`",
-            "`executor.md`",
-            "MUST NOT merge these two roles",
+            "smallest evidence-justified lineup",
+            "no universal subagent count limit",
         ]
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing defensive design phrases: {missing}")
+
+    def test_dynamic_professional_role_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "Dynamic Professional Role Contract",
+            "delegation.agent_registry",
+            "termination_control",
+            "codex_host_controller",
+            "reviewer_authority=evidence_only",
+            "no universal subagent count limit",
+            "multiple planners, implementers, reviewers, or verifiers",
+            "pause, amend, revalidate, and obtain fresh user approval",
+            "<agent-id>.md",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing dynamic role phrases: {missing}")
+
+    def test_agents_gate_uses_dynamic_lineup_and_copies_are_identical(self) -> None:
+        packaged = (SKILL_ROOT / "templates" / "agents-gate" / "AGENTS.md").read_bytes()
+        example = (REPO_ROOT / "examples" / "agents-gate" / "AGENTS.md").read_bytes()
+        self.assertEqual(packaged, example)
+        content = packaged.decode("utf-8")
+        for stale_path in ("planner.md", "executor.md"):
+            self.assertNotIn(stale_path, content)
+        for field in (
+            "professional id",
+            "specialization",
+            "governance role",
+            "activation nodes",
+            "tools",
+            "rationale",
+        ):
+            self.assertIn(field, content)
+        self.assertIn("pause, amend, revalidate, and obtain fresh user approval", content)
 
     def test_readmes_describe_public_clone_install_and_codex_usage(self) -> None:
         self.require_full_repository()
@@ -433,20 +470,23 @@ class SkillSurfaceTests(unittest.TestCase):
             overlay["specialized_skills_policy"],
             "node_scoped_atomic_capabilities",
         )
-        self.assertIn(
-            ".codex-loop/evidence/activation/planner.json",
-            overlay["required_evidence_refs"],
-        )
+        for agent in manifest["subagents"]:
+            self.assertIn(
+                f".codex-loop/evidence/activation/{agent['id']}.json",
+                overlay["required_evidence_refs"],
+            )
 
     def test_example_subagent_prompts_request_reasoning_alignment(self) -> None:
-        for relative in [
-            "examples/codex-loop/subagents/planner.md",
-            "examples/codex-loop/subagents/executor.md",
-        ]:
+        manifest = json.loads(
+            (SKILL_ROOT / "examples/codex-loop/agent_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for agent in manifest["subagents"]:
+            relative = f"examples/codex-loop/subagents/{agent['id']}.md"
             content = (SKILL_ROOT / relative).read_text(encoding="utf-8")
             for phrase in [
                 "reasoning_intensity = extended_thought",
-                "5.5 ultra-high",
                 "model_configuration_degraded",
             ]:
                 self.assertIn(phrase, content, f"{relative} missing {phrase}")

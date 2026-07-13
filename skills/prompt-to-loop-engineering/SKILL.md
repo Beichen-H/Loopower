@@ -78,6 +78,18 @@ Transform one natural-language task request into a deterministic `loop_design_re
 
 This Skill performs design-time analysis and Codex-native configuration scaffolding only. It does not grant permissions, invent runtime capabilities, or claim that the user task passed. When the user asks to run or continue the generated loop, Codex reads the persisted scaffold and acts as the host executor under the active session permissions.
 
+## Dynamic Professional Role Contract
+
+Professional identities are request-specific registry entries, not a fixed cast. `loop_spec.delegation.agent_registry` is the canonical source for each professional id, specialization, governance role, prompt reference, activation nodes, tools, and rationale; `agent_manifest.subagents` MUST mirror that approved registry. A finite scaffold may contain any evidence-justified number of professional instances, including multiple planners, implementers, reviewers, or verifiers. There is no universal subagent count limit, but the design MUST NOT claim that all registered professionals can run concurrently: live activation remains on demand and is bounded by the observed host lifecycle and parallel-execution capabilities.
+
+Choose the smallest evidence-justified lineup. Governance roles describe authority boundaries, while professional ids describe concrete specializations. Do not invent universal `planner`/`executor` identities, default filenames, or one-instance-per-role rules. Every prompt is stored at `.codex-loop/subagents/<agent-id>.md` and bound by the matching registry entry.
+
+LoopSpec owns all permitted transitions, structured edge predicates, threshold values and precedence, and terminal meanings. `termination_control.evaluation_authority=codex_host_controller` makes the main Codex host the policy-bound evaluator and enforcer: it may evaluate controller-observable facts, select only a declared eligible edge, enforce declared hard stops, update `.status`, and export the declared terminal result. It MUST NOT invent an edge, alter or override a threshold, reinterpret a terminal meaning, or accept a professional's recommendation as a control decision.
+
+All reviewer and verifier instances are evidence producers only. Their prompts and output contracts MUST state `reviewer_authority=evidence_only`; they report structured findings and criterion evidence but do not choose edges, mutate controller-owned state, waive thresholds, decide termination, or write the terminal export. The main Codex host retains those responsibilities under `termination_control` and the LoopSpec.
+
+The approved registry is closed for the active GO phase. If execution reveals a necessary professional identity that is absent from `delegation.agent_registry`, Codex MUST pause, amend, revalidate, and obtain fresh user approval before generating its prompt or activating it. A role discovery is a scaffold change, not permission to spawn an improvised persona.
+
 ## Cooperative Governance Overlay
 
 This Skill is a cooperative governance layer for loop design, approval boundaries, scaffold persistence, and lifecycle constraints. It is not an exclusive session router and must not compete with specialized host skills for domain execution.
@@ -353,7 +365,7 @@ Default fallback rules:
 1. Default maximum loop iterations: 3. If the user did not declare a loop budget, `loop_spec.json` MUST include a loop budget threshold equivalent to `value=3`, `unit=iterations`, with source `defensive_default`.
 2. Default exit signal: if the user did not declare completion criteria, each active stage MUST terminate only after the current-stage artifact passes a non-empty artifact check and basic schema/static validation.
 3. Default guardrail: `guardrails.json` MUST NOT overwrite an existing same-name workspace file directly. It MUST require either a timestamped destination or a `.tmp/` staging directory before replacing or promoting generated artifacts.
-4. Default sub-agent split: `subagents/` MUST include both `planner.md` and `executor.md`. `planner.md` controls scope, progress, budget, and exit decisions. `executor.md` performs concrete implementation or processing steps under the guardrails. Codex MUST NOT merge these two roles into one prompt.
+4. Default sub-agent lineup: derive the smallest evidence-justified lineup from observable project signals and assign request-specific professional ids. There is no universal subagent count limit and no mandatory planner/executor pair; each included instance still has exactly one governance role and must be justified independently.
 5. Default scaffold minimalism: do not add database state, queues, checkpoint stores, or extra worker prompts unless project evidence and declared capabilities justify them.
 6. Default validation: after writing the scaffold, Codex MUST run `scripts/validate_codex_loop_scaffold.py` and must not claim the scaffold is ready if validation fails.
 
@@ -451,8 +463,8 @@ Required layout:
 ├── agent_manifest.json
 ├── guardrails.json
 ├── subagents/
-│   ├── planner.md
-│   └── executor.md
+│   ├── <agent-id>.md
+│   └── <another-agent-id>.md
 ├── evidence/
 │   ├── activation/
 │   ├── handoff/
@@ -460,16 +472,10 @@ Required layout:
 └── .status
 ```
 
-Optional third sub-agent prompt:
-
-```text
-.codex-loop/subagents/reviewer.md
-```
-
 Scaffold rules:
 
-- `loop_spec.json` stores the loop rules, exit signals, budgets, terminal nodes, and capability binding.
-- `agent_manifest.json` binds the main Codex agent to the LoopSpec, guardrails, tool bindings, knowledge bindings, sub-agent prompts, and resume policy.
+- `loop_spec.json` stores the complete permitted transition graph, structured predicates, thresholds, terminal meanings, `termination_control`, capability binding, and `delegation.agent_registry`.
+- `agent_manifest.json` mirrors the approved professional registry and binds the main Codex agent to the LoopSpec, guardrails, tool bindings, knowledge bindings, prompt paths, and resume policy.
 - `guardrails.json` stores forbidden commands, write boundaries, approval-required actions, and stop conditions.
 - `subagents/*.md` stores compact role prompts for Codex to read when a loop node requires that specialization.
 - `evidence/*/*.json` stores lightweight post-hoc lifecycle evidence for activation, handoff, and completion when GO-phase DAG execution has begun.
@@ -491,13 +497,13 @@ Activation preconditions:
 
 #### Host Instantiation Command
 
-After the activation preconditions hold, Codex MUST NOT treat the scaffold as passive text only. Codex MUST instantiate the approved roles from `.codex-loop/subagents/` as live host processes in the Live Subagents Panel by calling the host-native `spawn_subagent`, `spawn_agent`, or equivalent native sub-agent creation API.
+After the activation preconditions hold, Codex MUST NOT treat the scaffold as passive text only. When an active LoopSpec node names an approved professional id, Codex MUST instantiate that instance on demand from `.codex-loop/subagents/` as a live host process in the Live Subagents Panel by calling the host-native `spawn_subagent`, `spawn_agent`, or equivalent native sub-agent creation API. Registry membership alone does not require simultaneous or eager activation.
 
-For each activated role, Codex MUST:
+For each activated professional instance, Codex MUST:
 
-- instantiate only roles declared in `.codex-loop/agent_manifest.json`;
-- use the manifest role id as the stable lifecycle identity when the host API permits naming;
-- bind the role to the corresponding `.codex-loop/subagents/<role>.md` file;
+- instantiate only professional ids declared in `.codex-loop/agent_manifest.json` and `loop_spec.delegation.agent_registry`;
+- use the professional id as the stable lifecycle identity when the host API permits naming;
+- bind the instance to the corresponding `.codex-loop/subagents/<agent-id>.md` file;
 - pass only the current approved loop stage, relevant guardrails, task slice, and required evidence contract as activation context;
 - keep the main Codex host responsible for orchestration, permission checks, approvals, and final reporting.
 
@@ -505,11 +511,11 @@ If the active Codex host does not expose `spawn_subagent` or an equivalent nativ
 
 #### Context Alignment
 
-When Codex activates a Live Subagents Panel role, the corresponding local `.md` file is the sole authoritative System Prompt baseline for that live role, subject only to higher-priority host, developer, safety, and tool-use instructions.
+When Codex activates a Live Subagents Panel professional, the corresponding local `.md` file is the sole authoritative System Prompt baseline for that live instance, subject only to higher-priority host, developer, safety, and tool-use instructions.
 
 Codex MUST:
 
-- read the complete `.codex-loop/subagents/<role>.md` file immediately before activation;
+- read the complete `.codex-loop/subagents/<agent-id>.md` file immediately before activation;
 - provide that file content as the role's system-prompt baseline, or as the closest host-supported equivalent when the API does not expose a literal system-prompt field;
 - preserve the file's role boundaries, guardrails, allowed outputs, and stop conditions without summarizing them away;
 - treat any extra task context as data-plane context, never as a replacement for the local role prompt;
@@ -519,15 +525,17 @@ The live role in the host UI and the versioned prompt file in the Git worktree m
 
 #### Status Binding
 
-The main Codex host owns synchronization between the dynamic lifecycle and the static scaffold. Whenever an activated sub-agent completes a stage, reports a blocking condition, triggers a guardrail, or hands control back to the host, Codex MUST update `.codex-loop/.status` with the current canonical stage or node id before continuing.
+The main Codex host owns synchronization between the dynamic lifecycle and the static scaffold. Whenever an activated sub-agent completes a stage, reports a blocking condition, triggers a guardrail, or hands control back to the host, Codex MUST evaluate that evidence under the LoopSpec and update `.codex-loop/.status` with the resulting canonical stage or node id before continuing.
+
+Codex MUST update `.codex-loop/.status` itself; professional instances only return evidence.
 
 Status binding rules:
 
 - `.status` remains a lightweight single-value stage marker, not a state database.
 - The value written to `.status` MUST reference a valid node or stage declared in `.codex-loop/loop_spec.json`.
-- The host MUST update `.status` only after reconciling sub-agent output with guardrails, acceptance evidence, and loop transition rules.
+- The host MUST update `.status` only after reconciling sub-agent output with guardrails, acceptance evidence, and LoopSpec-declared transition rules; it cannot invent a transition or override a threshold.
 - Guardrail stops, user-approval waits, validation failures, and lifecycle activation blocks MUST be reflected in `.status` before the host reports the pause.
-- Sub-agents MUST NOT write `.status` directly unless the host explicitly delegates that single write action and then verifies the result.
+- Sub-agents MUST NOT write `.status` directly. Reviewer and verifier output is structured evidence only; the `codex_host_controller` alone evaluates it, applies hard-stop precedence, selects eligible declared edges, and writes the terminal export.
 
 Machine-readable manifest contract: [`schemas/agent_manifest.schema.json`](schemas/agent_manifest.schema.json).
 
