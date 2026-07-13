@@ -46,6 +46,48 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(message, result.stdout + result.stderr)
 
+    def make_workflow_scaffold(self, work: Path) -> dict:
+        spec = self.load(work, "loop_spec.json")
+        spec["architecture"]["mode"] = "workflow"
+        spec["threshold_register"] = [
+            item for item in spec["threshold_register"]
+            if item["id"] not in {
+                "max_runtime_seconds", "max_iterations", "max_token_budget",
+                "max_no_progress_loops",
+            }
+        ]
+        spec["transition_policy"]["proposal_mode"] = "none"
+        spec["transition_policy"]["proposal_source_nodes"] = []
+        spec["transition_policy"]["fallback_node"] = "terminal-export"
+        spec["control_flow"]["nodes"] = [
+            node for node in spec["control_flow"]["nodes"]
+            if node["id"] != "terminal-stopped"
+        ]
+        spec["control_flow"]["edges"] = [
+            edge for edge in spec["control_flow"]["edges"]
+            if edge["to"] != "terminal-stopped"
+        ]
+        spec["control_flow"]["terminal_nodes"]["stopped"] = []
+        spec["transition_policy"]["allowed_targets"] = [
+            node_id for node_id in spec["transition_policy"]["allowed_targets"]
+            if node_id != "terminal-stopped"
+        ]
+        self.save(work, "loop_spec.json", spec)
+        return spec
+
+    def test_persisted_workflow_does_not_inherit_agent_loop_only_hard_stops(self) -> None:
+        with self.scaffold() as work:
+            self.make_workflow_scaffold(work)
+            result = self.run_validator(work)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_persisted_workflow_still_enforces_common_policy_authority(self) -> None:
+        with self.scaffold() as work:
+            spec = self.make_workflow_scaffold(work)
+            spec["termination_control"]["policy_authority"] = "codex_host_controller"
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "LoopSpec must remain the policy authority")
+
     def test_valid_four_role_scaffold_passes_without_max_items_assumption(self) -> None:
         manifest = json.loads((EXAMPLE / "agent_manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(len(manifest["subagents"]), 4)

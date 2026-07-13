@@ -52,6 +52,14 @@ def validate_core_loop_governance(
     expected_mode: str | None = None,
 ) -> None:
     """Validate the policy-authority split and deterministic stop surface."""
+    architecture = loop_spec.get("architecture")
+    declared_mode = architecture.get("mode") if isinstance(architecture, dict) else None
+    mode = expected_mode if expected_mode is not None else declared_mode
+    require(
+        mode in {"workflow", "agent_loop"},
+        "loop_spec architecture mode must be 'workflow' or 'agent_loop'",
+    )
+
     termination = loop_spec.get("termination_control")
     require(isinstance(termination, dict), "loop_spec.termination_control must be present")
     if not isinstance(termination, dict):
@@ -97,7 +105,7 @@ def validate_core_loop_governance(
                     isinstance(value, int) and not isinstance(value, bool) and value > 0,
                     f"hard-limit threshold {threshold_id!r} must be a positive integer",
                 )
-    if expected_mode != "workflow":
+    if mode == "agent_loop":
         missing = sorted(HARD_LIMIT_IDS - threshold_ids)
         require(not missing, f"threshold_register missing hard-limit thresholds: {missing}")
 
@@ -147,7 +155,7 @@ def validate_core_loop_governance(
         }
         require(mapped == terminal_kind_ids, "every terminal-kind node must map to exactly one terminal status")
         stopped = terminals.get("stopped", [])
-        if expected_mode != "workflow":
+        if mode == "agent_loop":
             require(isinstance(stopped, list) and bool(stopped), "hard stops require a mapped stopped terminal node")
 
     policy = loop_spec.get("transition_policy")
@@ -162,9 +170,6 @@ def validate_core_loop_governance(
         policy.get("controller_validation") == "required",
         "transition_policy.controller_validation must be required",
     )
-    mode = expected_mode
-    if mode is None and isinstance(loop_spec.get("architecture"), dict):
-        mode = loop_spec["architecture"].get("mode")
     expected_proposal = "none" if mode == "workflow" else "model_proposal"
     require(
         policy.get("proposal_mode") == expected_proposal,
@@ -177,5 +182,5 @@ def validate_core_loop_governance(
             require(node_id in node_map, f"transition_policy allowed target {node_id!r} is undefined")
     fallback = policy.get("fallback_node")
     require(fallback in node_map, "transition_policy.fallback_node is undefined")
-    if expected_mode != "workflow":
+    if mode == "agent_loop":
         require(fallback in stopped, "transition_policy.fallback_node must map to terminal_nodes.stopped")
