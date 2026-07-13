@@ -376,6 +376,30 @@ class SkillSurfaceTests(unittest.TestCase):
             self.assertIn(field, content)
         self.assertIn("pause, amend, revalidate, and obtain fresh user approval", content)
 
+    def test_active_contracts_reject_stale_fixed_cast_language(self) -> None:
+        active_contracts = {
+            "SKILL.md": (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8"),
+            "packaged AGENTS.md": (
+                SKILL_ROOT / "templates" / "agents-gate" / "AGENTS.md"
+            ).read_text(encoding="utf-8"),
+            "example AGENTS.md": (
+                REPO_ROOT / "examples" / "agents-gate" / "AGENTS.md"
+            ).read_text(encoding="utf-8"),
+        }
+        forbidden = [
+            "`lineup_recommendation`: proposed roles such as `planner`, `executor`, and optional `reviewer`",
+            "`subagents/` MUST include both `planner.md` and `executor.md`",
+            "generate at least `.codex-loop/subagents/planner.md` and `.codex-loop/subagents/executor.md`",
+            "Default sub-agent split: `subagents/` MUST include both",
+        ]
+        violations = [
+            f"{name}: {phrase}"
+            for name, content in active_contracts.items()
+            for phrase in forbidden
+            if phrase in content
+        ]
+        self.assertEqual(violations, [], f"Stale fixed-cast contract language: {violations}")
+
     def test_readmes_describe_public_clone_install_and_codex_usage(self) -> None:
         self.require_full_repository()
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")

@@ -154,7 +154,7 @@ For non-trivial tasks governed by this Skill or by an `AGENTS.md` overlay, Codex
 
 - `task_classification`: `trivial`, `non_trivial`, `needs_input`, `unsupported`, or `rejected`, with evidence.
 - `capability_snapshot`: observed host capabilities, available tools, active sandbox, sub-agent support, approval requirements, and unavailable capabilities.
-- `lineup_recommendation`: proposed roles such as `planner`, `executor`, and optional `reviewer`, with why each role is needed.
+- `lineup_recommendation`: a task-derived finite professional lineup with no reserved cast. For every proposed instance record `id`, `specialization`, `governance_role`, `activation_nodes`, `allowed_tools`, and `rationale`; governance roles may repeat when distinct specializations justify multiple instances.
 - `loop_boundary`: maximum iterations, budgets, exit signals, stagnation rules, write boundaries, and validation command.
 - `approval_state`: `not_required`, `pending`, `approved`, `denied`, or `lifecycle_activation_blocked`.
 
