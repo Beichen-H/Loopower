@@ -113,6 +113,10 @@ def validate_core_loop_governance(
     require(isinstance(control_flow, dict), "loop_spec.control_flow must be present")
     if not isinstance(control_flow, dict):
         return
+    cycles = control_flow.get("cycles")
+    require(isinstance(cycles, list), "control_flow.cycles must be an array")
+    if mode == "workflow":
+        require(not cycles, "workflow control_flow.cycles must be empty")
     require(
         control_flow.get("edge_selection_policy") == EDGE_SELECTION_POLICY,
         "edge_selection_policy must use lower_first, first_match, and explicit tie breakers",

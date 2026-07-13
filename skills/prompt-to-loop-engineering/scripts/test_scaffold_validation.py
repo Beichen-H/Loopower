@@ -59,6 +59,7 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
         spec["transition_policy"]["proposal_mode"] = "none"
         spec["transition_policy"]["proposal_source_nodes"] = []
         spec["transition_policy"]["fallback_node"] = "terminal-export"
+        spec["control_flow"]["cycles"] = []
         spec["control_flow"]["nodes"] = [
             node for node in spec["control_flow"]["nodes"]
             if node["id"] != "terminal-stopped"
@@ -87,6 +88,18 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
             spec["termination_control"]["policy_authority"] = "codex_host_controller"
             self.save(work, "loop_spec.json", spec)
             self.assert_invalid(work, "LoopSpec must remain the policy authority")
+
+    def test_persisted_workflow_rejects_declared_cycle(self) -> None:
+        with self.scaffold() as work:
+            spec = self.make_workflow_scaffold(work)
+            spec["control_flow"]["cycles"] = [
+                {
+                    "id": "illegal-workflow-cycle",
+                    "node_ids": ["requirements-analysis", "feature-implementation"],
+                }
+            ]
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "workflow control_flow.cycles must be empty")
 
     def test_valid_four_role_scaffold_passes_without_max_items_assumption(self) -> None:
         manifest = json.loads((EXAMPLE / "agent_manifest.json").read_text(encoding="utf-8"))
