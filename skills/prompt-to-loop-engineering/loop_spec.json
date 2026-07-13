@@ -470,7 +470,8 @@
     }
   },
   "transition_policy": {
-    "authority": "deterministic_controller",
+    "decision_authority": "codex_host_controller",
+    "proposal_mode": "none",
     "proposal_source_nodes": [],
     "allowed_targets": [
       "workspace_preflight",
@@ -498,31 +499,45 @@
     "criteria_bindings": [
       {
         "criterion_id": "AC-1",
-        "evaluator_ref": "request_shape_check"
+        "evaluator_ref": "request_shape_check",
+        "evaluator_node": "static_validation",
+        "subject_nodes": ["workspace_preflight"]
       },
       {
         "criterion_id": "AC-2",
-        "evaluator_ref": "capability_binding_check"
+        "evaluator_ref": "capability_binding_check",
+        "evaluator_node": "static_validation",
+        "subject_nodes": ["workspace_preflight"]
       },
       {
         "criterion_id": "AC-3",
-        "evaluator_ref": "task_contract_schema_check"
+        "evaluator_ref": "task_contract_schema_check",
+        "evaluator_node": "static_validation",
+        "subject_nodes": ["task_contract_building"]
       },
       {
         "criterion_id": "AC-4",
-        "evaluator_ref": "architecture_sufficiency_check"
+        "evaluator_ref": "architecture_sufficiency_check",
+        "evaluator_node": "static_validation",
+        "subject_nodes": ["orthogonal_composing"]
       },
       {
         "criterion_id": "AC-5",
-        "evaluator_ref": "loop_cycle_completeness_check"
+        "evaluator_ref": "loop_cycle_completeness_check",
+        "evaluator_node": "static_validation",
+        "subject_nodes": ["orthogonal_composing"]
       },
       {
         "criterion_id": "AC-6",
-        "evaluator_ref": "all_static_checks"
+        "evaluator_ref": "all_static_checks",
+        "evaluator_node": "static_validation",
+        "subject_nodes": ["static_validation"]
       },
       {
         "criterion_id": "AC-7",
-        "evaluator_ref": "output_contract_check"
+        "evaluator_ref": "output_contract_check",
+        "evaluator_node": "static_validation",
+        "subject_nodes": ["terminal_export"]
       }
     ],
     "evaluator_registry": [
@@ -570,6 +585,20 @@
       "external controller cancels specification construction"
     ],
     "cancellation_policy": "export no executable loop_spec and retain validation evidence"
+  },
+  "termination_control": {
+    "policy_authority": "loop_spec",
+    "evaluation_authority": "codex_host_controller",
+    "reviewer_authority": "evidence_only",
+    "transition_policy": "lower_first_then_first_match",
+    "hard_stop_precedence": [
+      "policy_violation",
+      "user_interrupt",
+      "max_runtime_seconds",
+      "max_iterations",
+      "max_token_budget",
+      "max_no_progress_loops"
+    ]
   },
   "policy_registry": {
     "retry": [
@@ -654,7 +683,8 @@
     "enabled": false,
     "worker_profiles": [],
     "handoff_contract_ref": null,
-    "merge_policy": null
+    "merge_policy": null,
+    "agent_registry": []
   },
   "artifacts": {
     "required_by_acceptance_or_recovery": [

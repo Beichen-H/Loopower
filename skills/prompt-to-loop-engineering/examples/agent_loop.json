@@ -53,8 +53,8 @@
       "entry_node": "observe_evidence",
       "edge_selection_policy": {"priority_order": "lower_first", "match_policy": "first_match", "equal_priority": "require_explicit_tie_breaker"},
       "nodes": [
-        {"id": "observe_evidence", "kind": "tool", "role": "verifier", "objective": "Request one authorized observation through the external controller and preserve its provenance.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": ["read_observation"], "state_read_scope": ["budget_remaining"], "state_write_scope": ["observations", "new_evidence_count"], "evaluator_refs": [], "retry_policy_ref": "transient_read_retry", "timeout_policy_ref": "observation_timeout", "checkpoint_before": false, "checkpoint_after": false},
-        {"id": "choose_next_action", "kind": "model", "role": "planner", "objective": "Update the diagnosis and propose another observation or termination for controller validation.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected", "latest_observation_valid", "new_evidence_count"], "state_write_scope": ["diagnosis"], "evaluator_refs": ["observation_coverage_check"], "retry_policy_ref": "model_schema_retry", "timeout_policy_ref": "model_timeout", "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "observe_evidence", "kind": "tool", "role": "verifier", "agent_ref": "evidence-collector", "objective": "Request one authorized observation through the external controller and preserve its provenance.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": ["read_observation"], "state_read_scope": ["budget_remaining"], "state_write_scope": ["observations"], "evaluator_refs": [], "retry_policy_ref": "transient_read_retry", "timeout_policy_ref": "observation_timeout", "checkpoint_before": false, "checkpoint_after": false},
+        {"id": "choose_next_action", "kind": "model", "role": "planner", "agent_ref": "diagnostic-strategist", "objective": "Update the diagnosis and propose another observation or termination for controller validation.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected", "latest_observation_valid", "new_evidence_count"], "state_write_scope": ["diagnosis"], "evaluator_refs": ["observation_coverage_check"], "retry_policy_ref": "model_schema_retry", "timeout_policy_ref": "model_timeout", "checkpoint_before": false, "checkpoint_after": false},
         {"id": "export_passed", "kind": "terminal", "role": "terminal", "objective": "Export a diagnosis only after deterministic acceptance evidence passes.", "supports_acceptance_criteria": ["AC-1"], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "acceptance_passed"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false},
         {"id": "export_stopped", "kind": "terminal", "role": "terminal", "objective": "Export a bounded non-passing stop result with collected evidence.", "supports_acceptance_criteria": [], "input_schema": {}, "output_schema": {}, "allowed_tools": [], "state_read_scope": ["observations", "diagnosis", "budget_remaining", "progress_detected"], "state_write_scope": [], "evaluator_refs": [], "retry_policy_ref": null, "timeout_policy_ref": null, "checkpoint_before": false, "checkpoint_after": false}
       ],
@@ -83,7 +83,8 @@
       "terminal_nodes": {"passed": ["export_passed"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["export_stopped"], "cancelled": []}
     },
     "transition_policy": {
-      "authority": "model_proposal",
+      "decision_authority": "codex_host_controller",
+      "proposal_mode": "model_proposal",
       "proposal_source_nodes": ["choose_next_action"],
       "allowed_targets": ["observe_evidence", "export_passed", "export_stopped"],
       "proposal_schema": {"next_node": "string", "reason_summary": "string", "expected_state_change": "array", "requested_tools": "array"},
@@ -97,7 +98,7 @@
       "side_effect_policies": []
     },
     "evaluation": {
-      "criteria_bindings": [{"criterion_id": "AC-1", "evaluator_ref": "observation_coverage_check", "evaluator_node": "observe_evidence"}],
+      "criteria_bindings": [{"criterion_id": "AC-1", "evaluator_ref": "observation_coverage_check", "evaluator_node": "observe_evidence", "subject_nodes": ["choose_next_action"]}],
       "evaluator_registry": ["observation_coverage_check"],
       "result_state_path": "acceptance_passed",
       "controller_writes_results": true,
@@ -105,6 +106,7 @@
       "independent_review_policy": null
     },
     "termination": {"pass_policy": "all mandatory criteria pass", "failure_conditions": [], "blocked_conditions": ["required observation is unavailable"], "stop_conditions": ["observation budget exhausted", "evidence stagnation detected"], "cancellation_policy": "external controller may cancel before the next observation"},
+    "termination_control": {"policy_authority": "loop_spec", "evaluation_authority": "codex_host_controller", "reviewer_authority": "evidence_only", "transition_policy": "lower_first_then_first_match", "hard_stop_precedence": ["policy_violation", "user_interrupt", "max_runtime_seconds", "max_iterations", "max_token_budget", "max_no_progress_loops"]},
     "policy_registry": {
       "retry": [{"id": "transient_read_retry", "limit_ref": "transient_retry_limit"}, {"id": "model_schema_retry", "limit_ref": "model_retry_limit"}],
       "timeout": [{"id": "observation_timeout", "threshold_ref": "observation_timeout"}, {"id": "model_timeout", "threshold_ref": "model_timeout"}],
@@ -116,7 +118,10 @@
       "observability": [{"id": "diagnosis_trace", "events": ["node_start", "node_end", "state_delta", "evaluation", "terminal_decision"]}]
     },
     "policies": {"recovery_policy_ref": "bounded_non_passing_export", "checkpoint_policy_ref": null, "budget_policy_ref": "diagnosis_budget", "scope_policy_ref": "diagnosis_only", "observability_policy_ref": "diagnosis_trace"},
-    "delegation": {"enabled": false, "worker_profiles": [], "handoff_contract_ref": null, "merge_policy": null},
+    "delegation": {"enabled": false, "worker_profiles": [], "handoff_contract_ref": null, "merge_policy": null, "agent_registry": [
+      {"id": "evidence-collector", "display_name": "Evidence Collector", "specialization": "diagnostic-evidence-collection", "governance_role": "verifier", "rationale": "Observation collection requires isolated read-only evidence handling.", "prompt_ref": ".codex-loop/subagents/evidence-collector.md", "activation_policy": "on_demand", "activation_nodes": ["observe_evidence"], "allowed_tools": ["read_observation"]},
+      {"id": "diagnostic-strategist", "display_name": "Diagnostic Strategist", "specialization": "evidence-driven-diagnostic-planning", "governance_role": "planner", "rationale": "Adaptive diagnostic proposals require a task-specific planning specialist.", "prompt_ref": ".codex-loop/subagents/diagnostic-strategist.md", "activation_policy": "on_demand", "activation_nodes": ["choose_next_action"], "allowed_tools": []}
+    ]},
     "artifacts": {"required_by_acceptance_or_recovery": ["observations", "diagnosis", "acceptance report"], "retention_policy": "external controller policy"},
     "threshold_register": [
       {"id": "observation_budget", "value": 4, "unit": "observations", "source": "request_budget_envelope", "rationale": "Bind the example to the request's observation limit.", "calibration_scope": "this request", "review_trigger": "request budget changes"},

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import defaultdict, deque
 from pathlib import Path
@@ -51,6 +52,8 @@ DETERMINISTIC_PROGRESS_FACTS = {
     "state.new_evidence_count",
 }
 NODE_ROLES = {"planner", "implementer", "reviewer", "verifier", "terminal"}
+AGENT_GOVERNANCE_ROLES = {"planner", "implementer", "reviewer", "verifier"}
+AGENT_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TOOL_ACCESS_MODES = {"read_only", "workspace_write", "external_write"}
 NODE_KINDS = {
     "deterministic",
@@ -479,8 +482,8 @@ def _validate_loop_spec(
     required = {
         "spec_id", "version", "created_from_request", "task_contract_ref", "architecture",
         "runtime_binding", "state", "context", "control_flow", "transition_policy", "tools",
-        "evaluation", "termination", "policy_registry", "policies", "delegation", "artifacts",
-        "threshold_register", "validation",
+        "evaluation", "termination", "termination_control", "policy_registry", "policies",
+        "delegation", "artifacts", "threshold_register", "validation",
     }
     _require_keys(spec, required, "loop_spec")
     _non_empty_string(spec["spec_id"], "loop_spec.spec_id")
@@ -527,6 +530,22 @@ def _validate_loop_spec(
     thresholds = _validate_thresholds(_list(spec["threshold_register"], "loop_spec.threshold_register"))
     policy_registry = _validate_policy_registry(_object(spec["policy_registry"], "loop_spec.policy_registry"), thresholds)
     tools = _validate_tools(_object(spec["tools"], "loop_spec.tools"), capabilities, policy)
+    declared_nodes = _list(
+        _object(spec["control_flow"], "loop_spec.control_flow").get("nodes"),
+        "loop_spec.control_flow.nodes",
+    )
+    declared_node_ids = {
+        _non_empty_string(
+            _object(node, f"control_flow.nodes[{index}]").get("id"),
+            f"control_flow.nodes[{index}].id",
+        )
+        for index, node in enumerate(declared_nodes)
+    }
+    agent_registry = _validate_agent_registry(
+        _object(spec["delegation"], "loop_spec.delegation"),
+        declared_node_ids,
+        tools,
+    )
     flow_info = _validate_control_flow(
         _object(spec["control_flow"], "loop_spec.control_flow"),
         expected_mode=expected_mode,
@@ -535,10 +554,15 @@ def _validate_loop_spec(
         evaluator_registry=set(_list(_object(spec["evaluation"], "loop_spec.evaluation").get("evaluator_registry"), "evaluation.evaluator_registry")),
         policy_registry=policy_registry,
         tool_access_modes=tools,
+        agent_registry=agent_registry,
+        controller_owned_fields=set(state["controller_owned_fields"]),
     )
     evaluation = _object(spec["evaluation"], "loop_spec.evaluation")
-    _validate_evaluation(evaluation, criterion_ids, mandatory_ids, flow_info)
+    _validate_evaluation(evaluation, criterion_ids, mandatory_ids, flow_info, agent_registry)
     _validate_transition_policy(_object(spec["transition_policy"], "loop_spec.transition_policy"), expected_mode, flow_info)
+    _validate_termination_control(
+        _object(spec["termination_control"], "loop_spec.termination_control")
+    )
     _validate_policy_refs(_object(spec["policies"], "loop_spec.policies"), policy_registry)
     _validate_capability_usage(spec, architecture, flow_info, tools, capabilities)
     if expected_mode == "agent_loop":
@@ -671,6 +695,96 @@ def _validate_tools(tools: dict[str, Any], capabilities: dict[str, Any], policy:
     return contract_access_modes
 
 
+def _validate_agent_registry(
+    delegation: dict[str, Any],
+    node_ids: set[str],
+    tool_access_modes: dict[str, str],
+) -> dict[str, dict[str, Any]]:
+    _require_keys(delegation, {"agent_registry"}, "loop_spec.delegation")
+    registry: dict[str, dict[str, Any]] = {}
+    signatures: dict[tuple[Any, ...], str] = {}
+    for index, raw in enumerate(
+        _list(delegation["agent_registry"], "loop_spec.delegation.agent_registry")
+    ):
+        path = f"loop_spec.delegation.agent_registry[{index}]"
+        item = _object(raw, path)
+        _require_keys(
+            item,
+            {
+                "id",
+                "display_name",
+                "specialization",
+                "governance_role",
+                "rationale",
+                "prompt_ref",
+                "activation_policy",
+                "activation_nodes",
+                "allowed_tools",
+            },
+            path,
+        )
+        agent_id = _non_empty_string(item["id"], f"{path}.id")
+        _require(
+            AGENT_ID_PATTERN.fullmatch(agent_id) is not None,
+            f"{path}.id must be a safe lowercase ASCII professional id",
+        )
+        _require(agent_id not in registry, f"duplicate agent registry id {agent_id!r}")
+        for field in ("display_name", "specialization", "rationale"):
+            _non_empty_string(item[field], f"{path}.{field}")
+        role = item["governance_role"]
+        _require(
+            role in AGENT_GOVERNANCE_ROLES,
+            f"agent {agent_id!r} has invalid governance role",
+        )
+        _require(
+            item["prompt_ref"] == f".codex-loop/subagents/{agent_id}.md",
+            f"agent {agent_id!r} prompt_ref must be derived from its id",
+        )
+        _require(
+            item["activation_policy"] == "on_demand",
+            f"agent {agent_id!r} activation_policy must be 'on_demand'",
+        )
+        activation_nodes = _string_list(
+            item["activation_nodes"], f"agent {agent_id!r}.activation_nodes", non_empty=True
+        )
+        unknown_nodes = sorted(set(activation_nodes) - node_ids)
+        _require(
+            not unknown_nodes,
+            f"agent {agent_id!r} activation_nodes reference undefined nodes {unknown_nodes}",
+        )
+        allowed_tools = _string_list(
+            item["allowed_tools"], f"agent {agent_id!r}.allowed_tools"
+        )
+        unknown_tools = sorted(set(allowed_tools) - set(tool_access_modes))
+        _require(
+            not unknown_tools,
+            f"agent {agent_id!r} references tools without matching capability access modes: {unknown_tools}",
+        )
+        if role in {"reviewer", "verifier"}:
+            writable = sorted(
+                tool_id
+                for tool_id in allowed_tools
+                if tool_access_modes[tool_id] != "read_only"
+            )
+            _require(
+                not writable,
+                f"reviewer or verifier agent {agent_id!r} must remain read-only; non-read-only tools: {writable}",
+            )
+        signature = (
+            item["specialization"],
+            role,
+            tuple(sorted(activation_nodes)),
+            tuple(sorted(allowed_tools)),
+        )
+        _require(
+            signature not in signatures,
+            f"agent {agent_id!r} has duplicate role signature with {signatures.get(signature)!r}",
+        )
+        signatures[signature] = agent_id
+        registry[agent_id] = item
+    return registry
+
+
 def _validate_condition(value: Any, path: str) -> None:
     _require(isinstance(value, dict), f"{path} must be a structured condition object")
     condition = _object(value, path)
@@ -704,6 +818,8 @@ def _validate_control_flow(
     evaluator_registry: set[str],
     policy_registry: dict[str, set[str]],
     tool_access_modes: dict[str, str],
+    agent_registry: dict[str, dict[str, Any]],
+    controller_owned_fields: set[str],
 ) -> dict[str, Any]:
     _require_keys(control_flow, {"entry_node", "edge_selection_policy", "nodes", "edges", "cycles", "terminal_nodes"}, "loop_spec.control_flow")
     selection = _object(control_flow["edge_selection_policy"], "control_flow.edge_selection_policy")
@@ -730,16 +846,47 @@ def _validate_control_flow(
         node_kinds[node_id] = item["kind"]
         node_roles[node_id] = item["role"]
         nodes_by_id[node_id] = item
+        node_tools = set(
+            _string_list(item.get("allowed_tools", []), f"node {node_id!r}.allowed_tools")
+        )
+        agent_ref = item.get("agent_ref")
+        if agent_ref is not None:
+            _non_empty_string(agent_ref, f"node {node_id!r}.agent_ref")
+            _require(
+                agent_ref in agent_registry,
+                f"node {node_id!r} references unknown agent_ref {agent_ref!r}",
+            )
+            agent = agent_registry[agent_ref]
+            _require(
+                item["role"] == agent["governance_role"],
+                f"node {node_id!r} role does not match agent {agent_ref!r} governance role",
+            )
+            _require(
+                node_id in agent["activation_nodes"],
+                f"node {node_id!r} is not declared in agent {agent_ref!r} activation_nodes",
+            )
+            excess_tools = sorted(node_tools - set(agent["allowed_tools"]))
+            _require(
+                not excess_tools,
+                f"node {node_id!r} tools exceed agent {agent_ref!r} allowed_tools: {excess_tools}",
+            )
         for key in ("state_read_scope", "state_write_scope"):
             scope = set(_string_list(item[key], f"node {node_id!r}.{key}"))
             _require(scope <= state_fields, f"node {node_id!r}.{key} references undefined state fields {sorted(scope - state_fields)}")
         if item["role"] in {"reviewer", "verifier"}:
-            node_tools = set(_string_list(item.get("allowed_tools", []), f"node {node_id!r}.allowed_tools"))
             forbidden = sorted(tool_id for tool_id in node_tools if tool_access_modes.get(tool_id) != "read_only")
             _require(
                 not forbidden,
                 f"reviewer or verifier node {node_id!r} must remain read-only; non-read-only tools: {forbidden}",
             )
+            if agent_ref is not None:
+                controller_writes = sorted(
+                    set(item["state_write_scope"]) & controller_owned_fields
+                )
+                _require(
+                    not controller_writes,
+                    f"reviewer or verifier agent node {node_id!r} cannot write controller-owned state: {controller_writes}",
+                )
         for criterion_id in _string_list(item.get("supports_acceptance_criteria", []), f"node {node_id!r}.supports_acceptance_criteria"):
             _require(criterion_id in criterion_ids, f"node {node_id!r} references unknown criterion {criterion_id!r}")
         for evaluator in _string_list(item.get("evaluator_refs", []), f"node {node_id!r}.evaluator_refs"):
@@ -799,6 +946,13 @@ def _validate_control_flow(
         reachable.add(node_id)
         queue.extend(adjacency.get(node_id, []))
     _require(reachable == node_ids, f"control_flow has unreachable nodes: {sorted(node_ids - reachable)}")
+    for agent_id, agent in agent_registry.items():
+        for activation_node in agent["activation_nodes"]:
+            _require(
+                activation_node in reachable
+                and nodes_by_id[activation_node].get("agent_ref") == agent_id,
+                f"agent {agent_id!r} activation node {activation_node!r} must be reachable and bound back through the same agent_ref",
+            )
 
     declared_cycles: list[set[str]] = []
     if expected_mode == "workflow":
@@ -852,6 +1006,9 @@ def _validate_control_flow(
         "node_kinds": node_kinds,
         "node_roles": node_roles,
         "nodes_by_id": nodes_by_id,
+        "node_agent_refs": {
+            node_id: node.get("agent_ref") for node_id, node in nodes_by_id.items()
+        },
         "terminal_ids": terminal_ids,
         "terminal_status_by_node": terminal_status_by_node,
         "edges": edges,
@@ -863,6 +1020,7 @@ def _validate_evaluation(
     criterion_ids: set[str],
     mandatory_ids: set[str],
     flow: dict[str, Any],
+    agent_registry: dict[str, dict[str, Any]],
 ) -> None:
     _require_keys(evaluation, {"criteria_bindings", "evaluator_registry", "result_state_path", "controller_writes_results", "deterministic_checks", "independent_review_policy"}, "loop_spec.evaluation")
     registry = set(_string_list(evaluation["evaluator_registry"], "evaluation.evaluator_registry", non_empty=True))
@@ -879,10 +1037,31 @@ def _validate_evaluation(
             _non_empty_string(evaluator_node, f"evaluation.criteria_bindings[{index}].evaluator_node")
             _require(evaluator_node in flow["node_ids"], f"evaluation binding references undefined evaluator_node {evaluator_node!r}")
         if criterion_id in mandatory_ids:
+            subject_nodes = _string_list(
+                item.get("subject_nodes"),
+                f"mandatory criterion {criterion_id!r}.subject_nodes",
+                non_empty=True,
+            )
+            for subject_node in subject_nodes:
+                _require(
+                    subject_node in flow["node_ids"],
+                    f"mandatory criterion {criterion_id!r} references undefined subject node {subject_node!r}",
+                )
             _require(
                 evaluator_node is not None,
                 f"mandatory criterion {criterion_id!r} requires evaluator_node for role isolation",
             )
+            evaluator_agent = flow["node_agent_refs"].get(evaluator_node)
+            subject_agents = {
+                flow["node_agent_refs"].get(subject_node)
+                for subject_node in subject_nodes
+                if flow["node_agent_refs"].get(subject_node) is not None
+            }
+            if subject_agents:
+                _require(
+                    evaluator_agent is not None and evaluator_agent not in subject_agents,
+                    f"mandatory criterion {criterion_id!r} requires an independent agent distinct from every subject node agent",
+                )
             _require(
                 flow["node_roles"].get(evaluator_node) in {"reviewer", "verifier"},
                 f"mandatory criterion {criterion_id!r} evaluator_node {evaluator_node!r} must be a reviewer or verifier",
@@ -895,9 +1074,16 @@ def _validate_evaluation(
 
 
 def _validate_transition_policy(policy: dict[str, Any], expected_mode: str, flow: dict[str, Any]) -> None:
-    _require_keys(policy, {"authority", "proposal_source_nodes", "allowed_targets", "proposal_schema", "controller_validation", "fallback_node"}, "loop_spec.transition_policy")
-    expected_authority = "deterministic_controller" if expected_mode == "workflow" else "model_proposal"
-    _require(policy["authority"] == expected_authority, f"{expected_mode} transition authority must be {expected_authority!r}")
+    _require_keys(policy, {"decision_authority", "proposal_mode", "proposal_source_nodes", "allowed_targets", "proposal_schema", "controller_validation", "fallback_node"}, "loop_spec.transition_policy")
+    _require(
+        policy["decision_authority"] == "codex_host_controller",
+        "transition_policy.decision_authority must be 'codex_host_controller'",
+    )
+    expected_proposal_mode = "none" if expected_mode == "workflow" else "model_proposal"
+    _require(
+        policy["proposal_mode"] == expected_proposal_mode,
+        f"{expected_mode} transition proposal_mode must be {expected_proposal_mode!r}",
+    )
     _require(policy["controller_validation"] == "required", "transition_policy.controller_validation must be 'required'")
     node_ids = flow["node_ids"]
     for target in _string_list(policy["allowed_targets"], "transition_policy.allowed_targets", non_empty=True):
@@ -909,7 +1095,32 @@ def _validate_transition_policy(policy: dict[str, Any], expected_mode: str, flow
         _require(bool(sources), "agent_loop requires model proposal source nodes")
         for source in sources:
             _require(flow["node_kinds"].get(source) == "model", f"proposal source {source!r} must be a model node")
+            _require(
+                flow["node_roles"].get(source) not in {"reviewer", "verifier"},
+                f"reviewer or verifier proposal source {source!r} violates evidence-only authority",
+            )
     _require(policy["fallback_node"] in node_ids, "transition_policy.fallback_node is undefined")
+
+
+def _validate_termination_control(control: dict[str, Any]) -> None:
+    expected = {
+        "policy_authority": "loop_spec",
+        "evaluation_authority": "codex_host_controller",
+        "reviewer_authority": "evidence_only",
+        "transition_policy": "lower_first_then_first_match",
+        "hard_stop_precedence": [
+            "policy_violation",
+            "user_interrupt",
+            "max_runtime_seconds",
+            "max_iterations",
+            "max_token_budget",
+            "max_no_progress_loops",
+        ],
+    }
+    _require(
+        control == expected,
+        "loop_spec.termination_control must reserve policy evaluation, transitions, and hard-stop precedence for the codex_host_controller",
+    )
 
 
 def _validate_policy_refs(policies: dict[str, Any], registry: dict[str, set[str]]) -> None:
