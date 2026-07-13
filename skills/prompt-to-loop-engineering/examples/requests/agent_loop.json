@@ -5,7 +5,10 @@
     {
       "source": "tool_search",
       "query": "spawn_agent spawn_subagent subagent multi_agent",
-      "result": "no_host_native_lifecycle_tool_found"
+      "result": {
+        "status": "host_native_lifecycle_tool_found",
+        "callable": "multi_agent_v1.spawn_agent"
+      }
     }
   ],
   "runtime_capabilities": {

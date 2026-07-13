@@ -135,8 +135,9 @@ SUBAGENT_DISCOVERY_TOKENS = (
     "spawn_subagent",
     "subagent",
     "multi_agent",
-    "no_host_native_lifecycle_tool_found",
 )
+NEGATIVE_SUBAGENT_DISCOVERY_MARKER = "no_host_native_lifecycle_tool_found"
+AFFIRMATIVE_SUBAGENT_DISCOVERY_MARKER = "host_native_lifecycle_tool_found"
 
 
 class DesignValidationError(AssertionError):
@@ -187,9 +188,19 @@ def _flatten_for_evidence(value: Any) -> str:
         return repr(value).lower()
 
 
-def _has_subagent_discovery_evidence(values: list[Any]) -> bool:
-    haystack = "\n".join(_flatten_for_evidence(value) for value in values)
-    return all(token in haystack for token in SUBAGENT_DISCOVERY_TOKENS)
+def _contains_exact_evidence_marker(record: str, marker: str) -> bool:
+    return re.search(
+        rf"(?<![a-z0-9_]){re.escape(marker)}(?![a-z0-9_])",
+        record,
+    ) is not None
+
+
+def _has_subagent_discovery_evidence(records: list[str], marker: str) -> bool:
+    return any(
+        _contains_exact_evidence_marker(record, marker)
+        and all(token in record for token in SUBAGENT_DISCOVERY_TOKENS)
+        for record in records
+    )
 
 
 def _validate_subagent_capability_discovery(
@@ -199,14 +210,33 @@ def _validate_subagent_capability_discovery(
     result_assumptions: list[Any],
     validation_assumptions: list[Any],
 ) -> None:
-    if capabilities["subagents"]:
-        return
     evidence_sources: list[Any] = []
     evidence_sources.extend(_list(request.get("known_context", []), "Loop_design_request.known_context"))
     evidence_sources.extend(result_assumptions)
     evidence_sources.extend(validation_assumptions)
+    records = [_flatten_for_evidence(value) for value in evidence_sources]
+    negative_evidence_present = any(
+        _contains_exact_evidence_marker(
+            record, NEGATIVE_SUBAGENT_DISCOVERY_MARKER
+        )
+        for record in records
+    )
+    if capabilities["subagents"]:
+        _require(
+            not negative_evidence_present,
+            "no_host_native_lifecycle_tool_found evidence contradicts runtime_capabilities.subagents=true",
+        )
+        _require(
+            _has_subagent_discovery_evidence(
+                records, AFFIRMATIVE_SUBAGENT_DISCOVERY_MARKER
+            ),
+            "runtime_capabilities.subagents=true requires affirmative tool_search evidence for spawn_agent, spawn_subagent, subagent, and multi_agent returning host_native_lifecycle_tool_found",
+        )
+        return
     _require(
-        _has_subagent_discovery_evidence(evidence_sources),
+        _has_subagent_discovery_evidence(
+            records, NEGATIVE_SUBAGENT_DISCOVERY_MARKER
+        ),
         "runtime_capabilities.subagents=false requires tool_search evidence for spawn_agent, spawn_subagent, subagent, and multi_agent returning no_host_native_lifecycle_tool_found",
     )
 

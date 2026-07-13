@@ -73,6 +73,17 @@ def minimal_request(**capability_overrides: object) -> dict:
     }
 
 
+def affirmative_subagent_discovery() -> dict:
+    return {
+        "source": "tool_search",
+        "query": "spawn_agent spawn_subagent subagent multi_agent",
+        "result": {
+            "status": "host_native_lifecycle_tool_found",
+            "callable": "multi_agent_v1.spawn_agent",
+        },
+    }
+
+
 def add_agent(spec, *, agent_id, governance_role, node_id, tools):
     spec["delegation"]["agent_registry"].append({
         "id": agent_id,
@@ -228,6 +239,11 @@ class DesignResultValidationTests(unittest.TestCase):
                     "subagents": False,
                     "required_subagent_reasoning_intensity": None,
                 }),
+                raw.update({"known_context": [{
+                    "source": "tool_search",
+                    "query": "spawn_agent spawn_subagent subagent multi_agent",
+                    "result": "no_host_native_lifecycle_tool_found",
+                }]}),
                 result["loop_spec"]["runtime_binding"].update({
                     "capabilities_snapshot": copy.deepcopy(raw["runtime_capabilities"])
                 }),
@@ -260,6 +276,33 @@ class DesignResultValidationTests(unittest.TestCase):
                 mutate(invalid_payload, invalid_request)
                 with self.assertRaisesRegex(DesignValidationError, message):
                     validate_design_result(invalid_payload, invalid_request)
+
+    def test_rejects_subagents_true_with_negative_discovery_evidence(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["known_context"] = [{
+            "source": "tool_search",
+            "query": "spawn_agent spawn_subagent subagent multi_agent",
+            "result": "no_host_native_lifecycle_tool_found",
+        }]
+
+        with self.assertRaisesRegex(DesignValidationError, "contradicts.*subagents=true"):
+            validate_design_result(payload, request)
+
+    def test_rejects_subagents_true_without_affirmative_discovery_evidence(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["known_context"] = []
+
+        with self.assertRaisesRegex(DesignValidationError, "host_native_lifecycle_tool_found"):
+            validate_design_result(payload, request)
+
+    def test_accepts_subagents_true_with_affirmative_discovery_evidence(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["known_context"] = [affirmative_subagent_discovery()]
+
+        validate_design_result(payload, request)
 
     def test_rejects_unknown_agent_ref(self) -> None:
         payload = four_agent_payload()
