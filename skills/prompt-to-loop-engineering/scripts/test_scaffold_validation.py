@@ -135,6 +135,41 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
             self.save(work, "loop_spec.json", spec)
             self.assert_invalid(work, "undeclared tool")
 
+    def test_rejects_reviewer_agent_with_write_tool_hidden_from_node(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            spec = self.load(work, "loop_spec.json")
+            reviewer = next(agent for agent in manifest["subagents"] if agent["governance_role"] == "reviewer")
+            registry_reviewer = next(agent for agent in spec["delegation"]["agent_registry"] if agent["id"] == reviewer["id"])
+            reviewer["allowed_tools"].append("edit_files")
+            registry_reviewer["allowed_tools"].append("edit_files")
+            self.save(work, "agent_manifest.json", manifest)
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "reviewer/verifier agent")
+
+    def test_rejects_duplicate_registry_agent_id(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["delegation"]["agent_registry"].append(
+                dict(spec["delegation"]["agent_registry"][0])
+            )
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "duplicate registry agent id")
+
+    def test_rejects_invalid_registry_agent_id(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["delegation"]["agent_registry"][0]["id"] = "CON"
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "unsafe agent id")
+
+    def test_rejects_manifest_registry_cardinality_mismatch(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["delegation"]["agent_registry"].pop()
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "cardinality mismatch")
+
     def test_rejects_manifest_loop_spec_tool_mode_disagreement(self) -> None:
         with self.scaffold() as work:
             manifest = self.load(work, "agent_manifest.json")

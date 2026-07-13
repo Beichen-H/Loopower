@@ -179,7 +179,36 @@ def validate_manifest_loop_alignment(manifest: dict[str, Any], loop_spec: dict[s
         for tool in agent.get("allowed_tools", []):
             require(tool in modes, f"subagent {agent_id} uses undeclared tool: {tool}")
 
-    registry_by_id = {agent.get("id"): agent for agent in registry_agents}
+        if agent.get("governance_role") in {"reviewer", "verifier"}:
+            non_read_only = [
+                tool for tool in agent.get("allowed_tools", [])
+                if modes[tool] != "read_only"
+            ]
+            require(
+                not non_read_only,
+                f"reviewer/verifier agent {agent_id!r} has non-read-only tools: {non_read_only}",
+            )
+
+    registry_by_id: dict[str, dict[str, Any]] = {}
+    registry_folded: dict[str, str] = {}
+    for agent in registry_agents:
+        agent_id = agent.get("id")
+        require(isinstance(agent_id, str) and agent_id, "registry agent id is required")
+        validate_safe_agent_id(agent_id)
+        require(agent_id not in registry_by_id, f"duplicate registry agent id: {agent_id}")
+        folded_id = agent_id.casefold()
+        if folded_id in registry_folded:
+            raise ScaffoldValidationError(
+                f"case-folding collision between registry agent ids: "
+                f"{registry_folded[folded_id]!r} and {agent_id!r}"
+            )
+        registry_folded[folded_id] = agent_id
+        registry_by_id[agent_id] = agent
+
+    require(
+        len(manifest_agents) == len(registry_agents),
+        "Manifest and LoopSpec agent registry cardinality mismatch",
+    )
     require(set(manifest_by_id) == set(registry_by_id), "Manifest and LoopSpec agent identities disagree")
     for agent_id, manifest_agent in manifest_by_id.items():
         registry_agent = registry_by_id[agent_id]

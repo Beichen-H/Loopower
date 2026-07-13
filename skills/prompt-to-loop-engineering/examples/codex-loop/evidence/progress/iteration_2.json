@@ -2,7 +2,7 @@
   "schema_version": "2.0.0",
   "evidence_type": "progress_sample",
   "run_id": "example-run-001",
-  "cycle_id": "bounded_plan_execute_cycle",
+  "cycle_id": "bounded_feature_delivery_cycle",
   "iteration": 2,
   "cycle_iteration": 2,
   "observed_at": "2026-07-10T12:02:20Z",
