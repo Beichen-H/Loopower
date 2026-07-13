@@ -33,7 +33,16 @@
       ".codex-loop/evidence/activation/requirements-analyst.json",
       ".codex-loop/evidence/activation/feature-engineer.json",
       ".codex-loop/evidence/activation/test-verifier.json",
-      ".codex-loop/evidence/activation/security-auditor.json"
+      ".codex-loop/evidence/activation/security-auditor.json",
+      ".codex-loop/evidence/handoff/handoff-01.json",
+      ".codex-loop/evidence/handoff/handoff-02.json",
+      ".codex-loop/evidence/handoff/handoff-03.json",
+      ".codex-loop/evidence/handoff/handoff-04.json",
+      ".codex-loop/evidence/completion/requirements-analyst.json",
+      ".codex-loop/evidence/completion/feature-engineer.json",
+      ".codex-loop/evidence/completion/test-verifier.json",
+      ".codex-loop/evidence/completion/security-auditor.json",
+      ".codex-loop/evidence/completion/terminal-export.json"
     ]
   },
   "subagents": [

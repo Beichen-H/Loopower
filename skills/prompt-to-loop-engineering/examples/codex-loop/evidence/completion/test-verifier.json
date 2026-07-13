@@ -1,0 +1,8 @@
+{
+  "schema_version": "2.0.0",
+  "evidence_type": "completion",
+  "node_id": "test-verification",
+  "subagent_id": "test-verifier",
+  "status": "completed",
+  "inline_fulfillment": false
+}

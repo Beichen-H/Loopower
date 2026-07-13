@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -116,7 +117,32 @@ def validate_manifest_overlay(manifest: dict[str, Any]) -> list[str]:
     return refs
 
 
-def subagent_nodes(manifest: dict[str, Any]) -> dict[str, str]:
+def topology_indexes(
+    loop_spec: dict[str, Any], manifest: dict[str, Any]
+) -> tuple[dict[str, str], set[str], set[tuple[str, str]]]:
+    control_flow = loop_spec.get("control_flow")
+    require(isinstance(control_flow, dict), "loop_spec.control_flow must be present")
+    nodes = control_flow.get("nodes")
+    edges = control_flow.get("edges")
+    require(isinstance(nodes, list), "loop_spec.control_flow.nodes must be an array")
+    require(isinstance(edges, list), "loop_spec.control_flow.edges must be an array")
+
+    node_ids = {node.get("id") for node in nodes if isinstance(node, dict)}
+    require(
+        all(isinstance(node_id, str) and node_id for node_id in node_ids),
+        "every LoopSpec node must have a non-empty id",
+    )
+    require(len(node_ids) == len(nodes), "LoopSpec node ids must be unique")
+    edge_pairs = {
+        (edge.get("from"), edge.get("to"))
+        for edge in edges
+        if isinstance(edge, dict)
+    }
+    require(
+        all(from_node in node_ids and to_node in node_ids for from_node, to_node in edge_pairs),
+        "LoopSpec edge references undefined node",
+    )
+
     mapping: dict[str, str] = {}
     for subagent in manifest.get("subagents", []):
         subagent_id = subagent.get("id")
@@ -126,7 +152,18 @@ def subagent_nodes(manifest: dict[str, Any]) -> dict[str, str]:
                 f"node {node_id!r} is assigned to multiple subagents",
             )
             mapping[node_id] = subagent_id
-    return mapping
+    node_agent_refs = {
+        node["id"]: node.get("agent_ref")
+        for node in nodes
+        if isinstance(node, dict) and node.get("id") in mapping
+    }
+    for node_id, subagent_id in mapping.items():
+        require(node_id in node_ids, f"subagent activation node {node_id!r} is undefined")
+        require(
+            node_agent_refs.get(node_id) == subagent_id,
+            f"node {node_id!r} agent_ref does not match manifest owner {subagent_id!r}",
+        )
+    return mapping, node_ids, edge_pairs
 
 
 def validate_activation(path: Path, evidence: dict[str, Any], owned_nodes: dict[str, str]) -> None:
@@ -150,16 +187,27 @@ def validate_activation(path: Path, evidence: dict[str, Any], owned_nodes: dict[
     require(model_config.get("degraded") is False, f"{path}: degraded must be false")
 
 
-def validate_completion(path: Path, evidence: dict[str, Any], owned_nodes: dict[str, str]) -> None:
+def validate_completion(
+    path: Path,
+    evidence: dict[str, Any],
+    owned_nodes: dict[str, str],
+    node_ids: set[str],
+) -> None:
     require(evidence.get("evidence_type") == "completion", f"{path}: evidence_type must be completion")
     require(evidence.get("status") in {"completed", "blocked", "stopped"}, f"{path}: invalid completion status")
     node_id = evidence.get("node_id")
     require(isinstance(node_id, str) and node_id, f"{path}: node_id is required")
+    require(node_id in node_ids, f"{path}: completion references undefined node")
     if node_id in owned_nodes:
         expected_subagent = owned_nodes[node_id]
         require(
             evidence.get("subagent_id") == expected_subagent,
             f"{path}: inline completion is forbidden for subagent node {node_id!r}; expected subagent_id {expected_subagent!r}",
+        )
+    else:
+        require(
+            evidence.get("producer") == "codex_host" and "subagent_id" not in evidence,
+            f"{path}: terminal completion must be produced by the Codex host",
         )
     require(
         evidence.get("inline_fulfillment") is False,
@@ -167,27 +215,37 @@ def validate_completion(path: Path, evidence: dict[str, Any], owned_nodes: dict[
     )
 
 
-def validate_handoff(path: Path, evidence: dict[str, Any]) -> None:
+def validate_handoff(
+    path: Path,
+    evidence: dict[str, Any],
+    node_ids: set[str],
+    edge_pairs: set[tuple[str, str]],
+) -> None:
     require(evidence.get("evidence_type") == "handoff", f"{path}: evidence_type must be handoff")
     require(evidence.get("status") == "handoff_ready", f"{path}: status must be handoff_ready")
     require(isinstance(evidence.get("from_node"), str) and evidence["from_node"], f"{path}: from_node is required")
     require(isinstance(evidence.get("to_node"), str) and evidence["to_node"], f"{path}: to_node is required")
-    require(
-        evidence["from_node"] != evidence["to_node"],
-        f"{path}: handoff from_node and to_node must differ",
-    )
+    from_node = evidence["from_node"]
+    to_node = evidence["to_node"]
+    require(from_node in node_ids and to_node in node_ids, "handoff references undefined node")
+    require((from_node, to_node) in edge_pairs, "handoff does not match a LoopSpec edge")
 
 
-def validate_evidence_file(path: Path, owned_nodes: dict[str, str]) -> None:
+def validate_evidence_file(
+    path: Path,
+    evidence: dict[str, Any],
+    owned_nodes: dict[str, str],
+    node_ids: set[str],
+    edge_pairs: set[tuple[str, str]],
+) -> None:
     require(path.is_file(), f"missing required evidence file: {path.as_posix()}")
-    evidence = load_json(path)
     evidence_type = evidence.get("evidence_type")
     if evidence_type == "activation":
         validate_activation(path, evidence, owned_nodes)
     elif evidence_type == "completion":
-        validate_completion(path, evidence, owned_nodes)
+        validate_completion(path, evidence, owned_nodes, node_ids)
     elif evidence_type == "handoff":
-        validate_handoff(path, evidence)
+        validate_handoff(path, evidence, node_ids, edge_pairs)
     else:
         raise EvidenceValidationError(f"{path}: unknown evidence_type {evidence_type!r}")
 
@@ -201,9 +259,25 @@ def validate_evidence(root: Path) -> None:
     manifest = load_json(root / "agent_manifest.json")
     validate_loop_governance(loop_spec)
     required_refs = validate_manifest_overlay(manifest)
-    owned_nodes = subagent_nodes(manifest)
+    owned_nodes, node_ids, edge_pairs = topology_indexes(loop_spec, manifest)
+    evidence_index: dict[tuple[str, str], list[Path]] = defaultdict(list)
     for ref in required_refs:
-        validate_evidence_file(localize_codex_loop_ref(root, ref), owned_nodes)
+        path = localize_codex_loop_ref(root, ref)
+        require(path.is_file(), f"missing required evidence file: {path.as_posix()}")
+        evidence = load_json(path)
+        validate_evidence_file(path, evidence, owned_nodes, node_ids, edge_pairs)
+        evidence_type = evidence.get("evidence_type")
+        node_id = evidence.get("node_id")
+        if evidence_type in {"activation", "completion"} and isinstance(node_id, str):
+            evidence_index[(evidence_type, node_id)].append(path)
+
+    for node_id in owned_nodes:
+        for evidence_type in ["activation", "completion"]:
+            matches = evidence_index[(evidence_type, node_id)]
+            require(
+                len(matches) == 1,
+                f"node {node_id!r} must have exactly one {evidence_type} evidence entry; found {len(matches)}",
+            )
 
 
 def main(argv: list[str]) -> int:
