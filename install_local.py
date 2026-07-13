@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TextIO
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -92,15 +93,27 @@ def run_verification(destination: Path) -> None:
         [sys.executable, "-B", str(test_script)],
         cwd=destination,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=False,
     )
     if result.stdout:
-        print(result.stdout, end="")
+        write_console_safe(result.stdout, sys.stdout)
     if result.stderr:
-        print(result.stderr, file=sys.stderr, end="")
+        write_console_safe(result.stderr, sys.stderr)
     if result.returncode != 0:
         raise SystemExit(result.returncode)
+
+
+def write_console_safe(value: str, stream: TextIO) -> None:
+    """Preserve UTF-8 subprocess decoding without crashing legacy consoles."""
+    try:
+        stream.write(value)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        safe_value = value.encode(encoding, errors="replace").decode(encoding)
+        stream.write(safe_value)
 
 
 def main() -> int:

@@ -195,6 +195,86 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
             (work / ".status").write_text("requirements-analysis\nfeature-implementation\n", encoding="utf-8")
             self.assert_invalid(work, ".status must contain exactly one stage id")
 
+    def test_rejects_host_as_termination_policy_authority(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["termination_control"] = {
+                "policy_authority": "codex_host_controller",
+                "evaluation_authority": "codex_host_controller",
+                "reviewer_authority": "evidence_only",
+                "transition_policy": "lower_first_then_first_match",
+                "hard_stop_precedence": [
+                    "policy_violation", "user_interrupt", "max_runtime_seconds",
+                    "max_iterations", "max_token_budget", "max_no_progress_loops",
+                ],
+            }
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "LoopSpec must remain the policy authority")
+
+    def test_rejects_reviewer_as_termination_authority(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["termination_control"] = {
+                "policy_authority": "loop_spec",
+                "evaluation_authority": "codex_host_controller",
+                "reviewer_authority": "termination_decider",
+                "transition_policy": "lower_first_then_first_match",
+                "hard_stop_precedence": [
+                    "policy_violation", "user_interrupt", "max_runtime_seconds",
+                    "max_iterations", "max_token_budget", "max_no_progress_loops",
+                ],
+            }
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "reviewer authority must be evidence_only")
+
+    def test_rejects_missing_hard_stop_precedence_entry(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["termination_control"] = {
+                "policy_authority": "loop_spec",
+                "evaluation_authority": "codex_host_controller",
+                "reviewer_authority": "evidence_only",
+                "transition_policy": "lower_first_then_first_match",
+                "hard_stop_precedence": [
+                    "policy_violation", "user_interrupt", "max_runtime_seconds",
+                    "max_iterations", "max_token_budget",
+                ],
+            }
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "hard_stop_precedence")
+
+    def test_rejects_missing_hard_limit_threshold(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["threshold_register"] = [
+                item for item in spec["threshold_register"]
+                if item["id"] != "max_token_budget"
+            ]
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "missing hard-limit thresholds")
+
+    def test_rejects_host_invented_transition_semantics(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["transition_policy"] = {
+                "decision_authority": "model",
+                "proposal_mode": "model_proposal",
+                "proposal_source_nodes": ["feature-implementation"],
+                "allowed_targets": ["terminal-export"],
+                "proposal_schema": {},
+                "controller_validation": "optional",
+                "fallback_node": "terminal-export",
+            }
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "decision_authority")
+
+    def test_rejects_terminal_mapped_to_multiple_statuses(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["control_flow"]["terminal_nodes"]["stopped"] = ["terminal-export"]
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "maps to more than one status")
+
 
 if __name__ == "__main__":
     unittest.main()

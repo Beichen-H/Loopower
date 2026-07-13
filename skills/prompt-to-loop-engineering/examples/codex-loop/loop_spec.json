@@ -89,13 +89,15 @@
       {"id": "feature-implementation", "kind": "model", "role": "implementer", "agent_ref": "feature-engineer", "objective": "Implement the approved requirements inside the workspace boundary.", "allowed_tools": ["read_files", "edit_files", "run_tests"]},
       {"id": "test-verification", "kind": "model", "role": "verifier", "agent_ref": "test-verifier", "objective": "Independently verify test and acceptance evidence without editing.", "allowed_tools": ["read_files", "run_tests"]},
       {"id": "security-review", "kind": "model", "role": "reviewer", "agent_ref": "security-auditor", "objective": "Independently review the verified change for security regressions.", "allowed_tools": ["read_files"]},
-      {"id": "terminal-export", "kind": "terminal", "role": "terminal", "objective": "Export controller-decided completion or stop status.", "allowed_tools": []}
+      {"id": "terminal-export", "kind": "terminal", "role": "terminal", "objective": "Export controller-decided successful completion.", "allowed_tools": []},
+      {"id": "terminal-stopped", "kind": "terminal", "role": "terminal", "objective": "Export a controller-enforced hard stop.", "allowed_tools": []}
     ],
     "edges": [
       {"from": "requirements-analysis", "to": "feature-implementation", "condition": {"all": [{"fact": "state.plan_ready", "operator": "eq", "value": true}]}, "priority": 10},
       {"from": "feature-implementation", "to": "test-verification", "condition": {"all": [{"fact": "state.implementation_ready", "operator": "eq", "value": true}]}, "priority": 10},
       {"from": "test-verification", "to": "security-review", "condition": {"all": [{"fact": "state.validation_passed", "operator": "eq", "value": true}]}, "priority": 10},
-      {"from": "security-review", "to": "terminal-export", "condition": {"all": [{"fact": "state.validation_passed", "operator": "eq", "value": true}]}, "priority": 10}
+      {"from": "security-review", "to": "terminal-export", "condition": {"all": [{"fact": "state.validation_passed", "operator": "eq", "value": true}]}, "priority": 10},
+      {"from": "security-review", "to": "terminal-stopped", "condition": {"all": [{"fact": "state.budget_remaining", "operator": "eq", "value": 0}]}, "priority": 20}
     ],
     "cycles": [
       {
@@ -113,7 +115,23 @@
         ]
       }
     ],
-    "terminal_nodes": {"passed": ["terminal-export"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["terminal-export"], "cancelled": []}
+    "terminal_nodes": {"passed": ["terminal-export"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["terminal-stopped"], "cancelled": []}
+  },
+  "transition_policy": {
+    "decision_authority": "codex_host_controller",
+    "proposal_mode": "model_proposal",
+    "proposal_source_nodes": ["requirements-analysis", "feature-implementation"],
+    "allowed_targets": ["requirements-analysis", "feature-implementation", "test-verification", "security-review", "terminal-export", "terminal-stopped"],
+    "proposal_schema": {"next_node": "string", "reason_summary": "string"},
+    "controller_validation": "required",
+    "fallback_node": "terminal-stopped"
+  },
+  "termination_control": {
+    "policy_authority": "loop_spec",
+    "evaluation_authority": "codex_host_controller",
+    "reviewer_authority": "evidence_only",
+    "transition_policy": "lower_first_then_first_match",
+    "hard_stop_precedence": ["policy_violation", "user_interrupt", "max_runtime_seconds", "max_iterations", "max_token_budget", "max_no_progress_loops"]
   },
   "delegation": {
     "agent_registry": [

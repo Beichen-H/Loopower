@@ -359,7 +359,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          "pattern": "^(?!(?:con|prn|aux|nul|clock\\$|com[1-9]|lpt[1-9])$)[a-z0-9]+(?:-[a-z0-9]+)*$"
         },
         "display_name": { "type": "string", "minLength": 1 },
         "specialization": { "type": "string", "minLength": 1 },
@@ -369,7 +369,7 @@
         "rationale": { "type": "string", "minLength": 1 },
         "prompt_ref": {
           "type": "string",
-          "pattern": "^\\.codex-loop/subagents/[a-z0-9]+(?:-[a-z0-9]+)*\\.md$"
+          "pattern": "^\\.codex-loop/subagents/(?!(?:con|prn|aux|nul|clock\\$|com[1-9]|lpt[1-9])\\.md$)[a-z0-9]+(?:-[a-z0-9]+)*\\.md$"
         },
         "activation_policy": { "const": "on_demand" },
         "activation_nodes": {
@@ -417,7 +417,7 @@
         },
         "agent_ref": {
           "type": "string",
-          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          "pattern": "^(?!(?:con|prn|aux|nul|clock\\$|com[1-9]|lpt[1-9])$)[a-z0-9]+(?:-[a-z0-9]+)*$"
         },
         "objective": { "type": "string", "minLength": 1 },
         "supports_acceptance_criteria": { "type": "array" },

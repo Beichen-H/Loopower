@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from normalize_design_request import normalize_design_request
+from governance_contracts import validate_core_loop_governance, validate_safe_agent_id
 
 
 DISPOSITION_TO_BUILD_STATUS = {
@@ -53,7 +54,6 @@ DETERMINISTIC_PROGRESS_FACTS = {
 }
 NODE_ROLES = {"planner", "implementer", "reviewer", "verifier", "terminal"}
 AGENT_GOVERNANCE_ROLES = {"planner", "implementer", "reviewer", "verifier"}
-AGENT_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TOOL_ACCESS_MODES = {"read_only", "workspace_write", "external_write"}
 NODE_KINDS = {
     "deterministic",
@@ -593,6 +593,7 @@ def _validate_loop_spec(
     _validate_termination_control(
         _object(spec["termination_control"], "loop_spec.termination_control")
     )
+    validate_core_loop_governance(spec, _require, expected_mode=expected_mode)
     _validate_policy_refs(_object(spec["policies"], "loop_spec.policies"), policy_registry)
     _validate_capability_usage(spec, architecture, flow_info, tools, capabilities)
     if expected_mode == "agent_loop":
@@ -754,10 +755,7 @@ def _validate_agent_registry(
             path,
         )
         agent_id = _non_empty_string(item["id"], f"{path}.id")
-        _require(
-            AGENT_ID_PATTERN.fullmatch(agent_id) is not None,
-            f"{path}.id must be a safe lowercase ASCII professional id",
-        )
+        validate_safe_agent_id(agent_id, _require, f"{path}.id")
         _require(agent_id not in registry, f"duplicate agent registry id {agent_id!r}")
         for field in ("display_name", "specialization", "rationale"):
             _non_empty_string(item[field], f"{path}.{field}")
@@ -1149,7 +1147,7 @@ def _validate_termination_control(control: dict[str, Any]) -> None:
     }
     _require(
         control == expected,
-        "loop_spec.termination_control must reserve policy evaluation, transitions, and hard-stop precedence for the codex_host_controller",
+        "LoopSpec must remain the policy authority; the codex_host_controller only evaluates declared transitions and hard stops",
     )
 
 

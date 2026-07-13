@@ -119,7 +119,7 @@ def validate_manifest_overlay(manifest: dict[str, Any]) -> list[str]:
 
 def topology_indexes(
     loop_spec: dict[str, Any], manifest: dict[str, Any]
-) -> tuple[dict[str, str], set[str], set[tuple[str, str]]]:
+) -> tuple[dict[str, str], set[str], set[tuple[str, str]], str]:
     control_flow = loop_spec.get("control_flow")
     require(isinstance(control_flow, dict), "loop_spec.control_flow must be present")
     nodes = control_flow.get("nodes")
@@ -133,6 +133,8 @@ def topology_indexes(
         "every LoopSpec node must have a non-empty id",
     )
     require(len(node_ids) == len(nodes), "LoopSpec node ids must be unique")
+    entry_node = control_flow.get("entry_node")
+    require(entry_node in node_ids, "LoopSpec entry_node is undefined")
     edge_pairs = {
         (edge.get("from"), edge.get("to"))
         for edge in edges
@@ -163,7 +165,7 @@ def topology_indexes(
             node_agent_refs.get(node_id) == subagent_id,
             f"node {node_id!r} agent_ref does not match manifest owner {subagent_id!r}",
         )
-    return mapping, node_ids, edge_pairs
+    return mapping, node_ids, edge_pairs, entry_node
 
 
 def validate_activation(path: Path, evidence: dict[str, Any], owned_nodes: dict[str, str]) -> None:
@@ -218,6 +220,7 @@ def validate_completion(
 def validate_handoff(
     path: Path,
     evidence: dict[str, Any],
+    owned_nodes: dict[str, str],
     node_ids: set[str],
     edge_pairs: set[tuple[str, str]],
 ) -> None:
@@ -229,6 +232,20 @@ def validate_handoff(
     to_node = evidence["to_node"]
     require(from_node in node_ids and to_node in node_ids, "handoff references undefined node")
     require((from_node, to_node) in edge_pairs, "handoff does not match a LoopSpec edge")
+    if from_node in owned_nodes:
+        require(
+            evidence.get("from_subagent_id") == owned_nodes[from_node],
+            f"{path}: handoff source identity does not match manifest ownership",
+        )
+    else:
+        require(evidence.get("from_host") == "codex", f"{path}: host-origin handoff must declare from_host=codex")
+    if to_node in owned_nodes:
+        require(
+            evidence.get("to_subagent_id") == owned_nodes[to_node],
+            f"{path}: handoff target identity does not match manifest ownership",
+        )
+    else:
+        require(evidence.get("to_host") == "codex", f"{path}: host-target handoff must declare to_host=codex")
 
 
 def validate_evidence_file(
@@ -245,7 +262,7 @@ def validate_evidence_file(
     elif evidence_type == "completion":
         validate_completion(path, evidence, owned_nodes, node_ids)
     elif evidence_type == "handoff":
-        validate_handoff(path, evidence, node_ids, edge_pairs)
+        validate_handoff(path, evidence, owned_nodes, node_ids, edge_pairs)
     else:
         raise EvidenceValidationError(f"{path}: unknown evidence_type {evidence_type!r}")
 
@@ -259,8 +276,10 @@ def validate_evidence(root: Path) -> None:
     manifest = load_json(root / "agent_manifest.json")
     validate_loop_governance(loop_spec)
     required_refs = validate_manifest_overlay(manifest)
-    owned_nodes, node_ids, edge_pairs = topology_indexes(loop_spec, manifest)
+    owned_nodes, node_ids, edge_pairs, entry_node = topology_indexes(loop_spec, manifest)
     evidence_index: dict[tuple[str, str], list[Path]] = defaultdict(list)
+    completion_nodes: set[str] = set()
+    handoff_pairs: set[tuple[str, str]] = set()
     for ref in required_refs:
         path = localize_codex_loop_ref(root, ref)
         require(path.is_file(), f"missing required evidence file: {path.as_posix()}")
@@ -270,6 +289,10 @@ def validate_evidence(root: Path) -> None:
         node_id = evidence.get("node_id")
         if evidence_type in {"activation", "completion"} and isinstance(node_id, str):
             evidence_index[(evidence_type, node_id)].append(path)
+        if evidence_type == "completion" and isinstance(node_id, str):
+            completion_nodes.add(node_id)
+        if evidence_type == "handoff":
+            handoff_pairs.add((evidence["from_node"], evidence["to_node"]))
 
     for node_id in owned_nodes:
         for evidence_type in ["activation", "completion"]:
@@ -278,6 +301,22 @@ def validate_evidence(root: Path) -> None:
                 len(matches) == 1,
                 f"node {node_id!r} must have exactly one {evidence_type} evidence entry; found {len(matches)}",
             )
+
+    if len(completion_nodes) > 1:
+        require(bool(handoff_pairs), "executed cross-node completion chain requires handoff evidence")
+        reachable = {entry_node}
+        changed = True
+        while changed:
+            changed = False
+            for source, target in handoff_pairs:
+                if source in reachable and target not in reachable:
+                    reachable.add(target)
+                    changed = True
+        missing_chain = sorted(completion_nodes - reachable)
+        require(
+            not missing_chain,
+            f"handoff evidence does not cover the executed transition chain; unreachable completed nodes: {missing_chain}",
+        )
 
 
 def main(argv: list[str]) -> int:

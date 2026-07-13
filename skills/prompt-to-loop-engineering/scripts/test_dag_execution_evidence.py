@@ -134,6 +134,18 @@ class DagExecutionEvidenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("handoff does not match a LoopSpec edge", result.stdout)
 
+    def test_handoff_identity_must_match_manifest_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            path = root / "evidence" / "handoff" / "handoff-01.json"
+            evidence = json.loads(path.read_text(encoding="utf-8"))
+            evidence["from_subagent_id"] = "ghost-agent"
+            self.write_evidence(path, evidence)
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("source identity", result.stdout)
+
     def test_missing_activation_coverage_for_subagent_node_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self.copy_scaffold(tmp)
@@ -193,6 +205,35 @@ class DagExecutionEvidenceTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("reasoning_intensity must be extended_thought", result.stdout)
+
+    def test_removing_all_handoff_refs_fails_for_executed_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            manifest_path = root / "agent_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["governance_overlay"]["required_evidence_refs"] = [
+                ref for ref in manifest["governance_overlay"]["required_evidence_refs"]
+                if "/handoff/" not in ref
+            ]
+            self.write_evidence(manifest_path, manifest)
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("handoff evidence", result.stdout)
+
+    def test_missing_one_executed_transition_handoff_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            manifest_path = root / "agent_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["governance_overlay"]["required_evidence_refs"].remove(
+                ".codex-loop/evidence/handoff/handoff-02.json"
+            )
+            self.write_evidence(manifest_path, manifest)
+            result = self.run_validator(root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("executed transition", result.stdout)
 
 
 if __name__ == "__main__":

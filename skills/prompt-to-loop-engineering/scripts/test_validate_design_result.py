@@ -388,6 +388,20 @@ class DesignResultValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(DesignValidationError, "termination_control"):
             validate_design_result(payload, load_request("agent_loop.json"))
 
+    def test_rejects_windows_reserved_agent_id(self) -> None:
+        payload = four_agent_payload()
+        spec = payload["loop_spec"]
+        agent = spec["delegation"]["agent_registry"][0]
+        old_id = agent["id"]
+        agent["id"] = "nul"
+        agent["prompt_ref"] = ".codex-loop/subagents/nul.md"
+        for node in spec["control_flow"]["nodes"]:
+            if node.get("agent_ref") == old_id:
+                node["agent_ref"] = "nul"
+
+        with self.assertRaisesRegex(DesignValidationError, "reserved device name"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
     def test_rejects_tampered_effective_request(self) -> None:
         request = minimal_request()
         effective, report = normalize_design_request(request)

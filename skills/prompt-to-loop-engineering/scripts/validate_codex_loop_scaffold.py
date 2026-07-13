@@ -9,14 +9,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from governance_contracts import (
+    validate_core_loop_governance,
+    validate_safe_agent_id as validate_shared_safe_agent_id,
+)
+
 
 STAGE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]*$")
-AGENT_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-WINDOWS_DEVICE_NAMES = {
-    "con", "prn", "aux", "nul", "clock$",
-    *(f"com{i}" for i in range(1, 10)),
-    *(f"lpt{i}" for i in range(1, 10)),
-}
 FORBIDDEN_NAMES = {
     "runtime", "state.json", "checkpoint.json", "checkpoints", "queue",
     "queues", "database", "db",
@@ -48,8 +47,10 @@ def require(condition: bool, message: str) -> None:
 
 
 def validate_safe_agent_id(agent_id: str) -> None:
-    require(bool(AGENT_ID_RE.fullmatch(agent_id)), f"unsafe agent id: {agent_id!r}")
-    require(agent_id.casefold() not in WINDOWS_DEVICE_NAMES, f"unsafe agent id: {agent_id!r}")
+    try:
+        validate_shared_safe_agent_id(agent_id, require, "agent id")
+    except ScaffoldValidationError as exc:
+        raise ScaffoldValidationError(f"unsafe agent id: {agent_id!r}; {exc}") from exc
 
 
 def canonical_prompt_path(agent_id: str) -> str:
@@ -299,6 +300,7 @@ def validate_scaffold(root: Path) -> None:
     guardrails = load_json(root / "guardrails.json")
     validate_loop_spec(loop_spec)
     validate_manifest(root, manifest, loop_spec)
+    validate_core_loop_governance(loop_spec, require)
     validate_guardrails(guardrails)
     validate_status(root, loop_spec)
 

@@ -16,6 +16,23 @@ REPO_ROOT = SKILL_ROOT.parents[1]
 
 
 class SkillSurfaceTests(unittest.TestCase):
+    def test_agent_id_schema_patterns_reject_windows_device_names(self) -> None:
+        loop_schema = json.loads(
+            (SKILL_ROOT / "schemas" / "loop_spec.schema.json").read_text(encoding="utf-8")
+        )
+        manifest_schema = json.loads(
+            (SKILL_ROOT / "schemas" / "agent_manifest.schema.json").read_text(encoding="utf-8")
+        )
+        patterns = [
+            loop_schema["$defs"]["agent_registry_entry"]["properties"]["id"]["pattern"],
+            loop_schema["$defs"]["node"]["properties"]["agent_ref"]["pattern"],
+            manifest_schema["$defs"]["subagent"]["properties"]["id"]["pattern"],
+        ]
+        for pattern in patterns:
+            for unsafe in ("con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"):
+                self.assertIsNone(re.fullmatch(pattern, unsafe), (pattern, unsafe))
+            self.assertIsNotNone(re.fullmatch(pattern, "security-auditor"))
+
     def require_full_repository(self) -> None:
         if not (REPO_ROOT / "README.md").is_file():
             self.skipTest("repository-root assets are not present in installed-skill mode")
@@ -619,6 +636,8 @@ class SkillSurfaceTests(unittest.TestCase):
         installer = (REPO_ROOT / "install_local.py").read_text(encoding="utf-8")
         for token in ['"__pycache__"', '".pyc"', '".pyo"']:
             self.assertIn(token, installer)
+        self.assertIn('encoding="utf-8"', installer)
+        self.assertIn('errors="replace"', installer)
 
     def test_local_install_scripts_are_packaged_and_documented(self) -> None:
         self.require_full_repository()
