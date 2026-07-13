@@ -37,7 +37,7 @@ Separate a subagent's professional identity from its governance authority:
 }
 ```
 
-`id` is a unique lowercase slug and may express any task-relevant profession. `display_name` and `specialization` are descriptive. `governance_role` remains a closed enum: `planner`, `implementer`, `reviewer`, or `verifier`. Every governance role may have zero or more instances. A terminal control-flow node is not a subagent.
+`id` is a unique lowercase ASCII slug and may express any task-relevant profession. Reject path traversal, case-folding collisions, Windows reserved device names, trailing dots/spaces, and identifiers that cannot map safely to one file on all supported platforms. `display_name` and `specialization` are descriptive. `governance_role` remains a closed enum: `planner`, `implementer`, `reviewer`, or `verifier`. Every governance role may have zero or more instances. A terminal control-flow node is not a subagent.
 
 Permissions derive from the normalized capability snapshot, node bindings, tool access modes, and `governance_role`; they never derive from `id`, `display_name`, or prompt prose. Reviewer and verifier agents remain read-only.
 
@@ -49,9 +49,13 @@ Remove hard-coded `planner.md` and `executor.md` file requirements. The scaffold
 
 The design builder must justify each subagent with a distinct responsibility, at least one reachable activation node, and a task or risk boundary that cannot be represented cleanly by an existing role. Reject duplicate identities, duplicate prompt paths, orphan roles, and exact duplicate responsibility/tool/node signatures.
 
+Every subagent uses `activation_policy=on_demand`. Declaring many roles does not authorize eager activation. Each activated role must inherit the required reasoning configuration and produce the existing activation, handoff, and completion evidence.
+
 The ambiguous-request fallback remains defensive but no longer mandates named roles. It derives the smallest useful lineup from observable project evidence and records the rationale. A simple one-shot or fixed workflow may produce no subagents.
 
 ## LoopSpec bindings
+
+LoopSpec is the design-stage source of truth and therefore carries a statically validated `delegation.agent_registry`. Each registry entry contains the professional identity, governance role, specialization, rationale, activation nodes, allowed tools, and prompt reference that the later scaffold must persist. `validate_design_result.py` validates node bindings against this registry without requiring a separate Manifest input. During scaffold validation, `agent_manifest.subagents` must mirror the registry exactly for all lifecycle-relevant fields; the Manifest may add only its declared host-lifecycle and output-contract metadata.
 
 Control-flow nodes keep a closed governance classification and add an explicit professional-agent binding:
 
@@ -79,7 +83,7 @@ Every manifest activation node must resolve back to a reachable node with the sa
 
 Each implementer agent that contributes to a mandatory acceptance criterion must be covered by at least one independent reviewer or verifier agent. The evaluator must have a different `agent_ref` from every implementer whose output it evaluates. One reviewer may cover multiple low-risk implementers when the criteria bindings make that coverage explicit. Separate reviewers or verifiers are required when policy, risk domain, or tool isolation requires independent scopes.
 
-Mandatory criteria bindings continue to name an `evaluator_node`. That node must have governance role `reviewer` or `verifier`, bind to an independent agent, use read-only tools, and emit structured evidence references. An implementer cannot evaluate its own mandatory work through a second node or alias.
+Mandatory criteria bindings name both `subject_nodes` and an `evaluator_node`. `subject_nodes` identifies the nodes that produced the work under evaluation, making independence machine-checkable instead of inferred from prose. The evaluator node must have governance role `reviewer` or `verifier`, bind to an agent different from every subject node's agent, use read-only tools, and emit structured evidence references. An implementer cannot evaluate its own mandatory work through a second node or alias.
 
 ## Controller-owned transition and termination
 
@@ -107,6 +111,8 @@ Every generated agent loop declares:
 
 The main Codex host evaluates controller-observable predicates over reviewer evidence, progress evidence, policy state, user interrupts, and threshold counters. It selects the first matching edge under the declared priority policy, updates `.status`, and records terminal or stagnation evidence. A reviewer may emit `status=passed` or `status=failed`; it may not emit a global `continue`, `terminate`, or scheduler decision.
 
+Replace the ambiguous agent-loop `transition_policy.authority=model_proposal` wording with separate fields: `decision_authority=codex_host_controller` and `proposal_mode=model_proposal`. Model nodes may propose a target, but only the controller validates predicates and selects an edge. Reviewer and verifier nodes use `decision_rights=evidence_only`, may not write controller-owned state, and may not be listed as transition proposal sources.
+
 Hard-stop conditions take precedence over ordinary pass/fail routing. A successful terminal requires all mandatory criteria to have independent passing evidence and no unresolved policy or capability block. Failure, blocked, stopped, and stagnation terminals remain distinct.
 
 ## Lifecycle and amendment rules
@@ -119,6 +125,8 @@ If execution evidence reveals a need for a previously undeclared specialist, Cod
 
 Existing `planner`, `executor`, and `reviewer` identities remain valid slugs, but v2 manifests lack the new explicit authority and node-binding guarantees. The v3 validator should report a targeted migration error rather than silently inferring permissions. Examples and installation assets move together to v3.0.0.
 
+Set the Skill release to `3.0.0` and the breaking `agent_manifest` schema contract to `2.0.0`. Keep these version domains explicit rather than pretending the old manifest validates unchanged.
+
 No v2 evidence or provenance rule is removed. Existing four-hard-limit thresholds, progress fingerprints, tool access modes, reasoning intensity inheritance, activation/handoff/completion evidence, and scheduler ownership remain required where currently applicable.
 
 ## Physical changes
@@ -126,16 +134,20 @@ No v2 evidence or provenance rule is removed. Existing four-hard-limit threshold
 - Update `SKILL.md` to define dynamic professional roles, controller-owned termination, and amendment gates.
 - Update `schemas/agent_manifest.schema.json` to remove fixed role names and the three-agent maximum, and require professional identity metadata plus `governance_role`.
 - Update `schemas/loop_spec.schema.json` with `agent_ref` bindings and `termination_control`.
+- Formalize `loop_spec.delegation.agent_registry` as the design-stage role source of truth and require the scaffold Manifest to mirror it.
 - Update the scaffold and design-result validators to enforce referential integrity, role/tool agreement, independent evaluator identity, prompt derivation, and controller-only termination.
 - Replace fixed prompt-file requirements in `validate_codex_loop_scaffold.py` with manifest-derived requirements.
+- Cross-check Manifest tool bindings against LoopSpec `tool_access_modes` and reject access-mode disagreement or undeclared subagent tools.
+- Require `.status` to reference a real LoopSpec node, require handoff evidence to reference a real graph edge, and require activation/completion evidence coverage for every activated subagent node rather than trusting an incomplete hand-written evidence list.
+- Reject a terminal node used as the only reviewer/verifier; an implementer requires a reachable non-terminal independent evaluator.
 - Update the example scaffold with task-specific roles and corresponding prompt files.
-- Update README files, packaged templates, release metadata, and all version markers to v3.0.0.
+- Update both `README.md` and `README-CN.md`, packaged `AGENTS.md` templates, release metadata, installation text, architecture comparisons, lifecycle examples, and all Skill version markers to v3.0.0. Document that role count is topology-derived and finite, while concurrency remains capability-bound.
 - Preserve the repository's no-Runtime rule.
 
 ## Test strategy
 
 Add passing tests for arbitrary professional role names, more than three declared subagents, multiple implementers, multiple reviewers, sequential activation without parallel capability, and independent reviewer coverage.
 
-Add failing tests for orphan agents, missing or mismatched prompt files, duplicate role signatures, node/manifest authority mismatch, undeclared activation, implementer self-evaluation through aliases, reviewer write tools, reviewer-owned transition decisions, missing controller termination contract, unvalidated mid-run role creation, and parallel activation without capability support.
+Add failing tests for orphan agents, unsafe or case-colliding ids, missing or mismatched prompt files, duplicate role signatures, node/manifest authority mismatch, undeclared activation, implementer self-evaluation through aliases, missing `subject_nodes`, reviewer write tools, reviewer-owned transition decisions, reviewer writes to controller state, terminal-only review, missing controller termination contract, Manifest/LoopSpec tool-mode disagreement, invalid `.status`, handoff to a non-edge, incomplete lifecycle evidence coverage, unvalidated mid-run role creation, and parallel activation without capability support.
 
 Run the complete unit suite, recursive JSON parsing, scaffold validation, design-result example validation, DAG evidence validation, progress evidence validation, Skill surface validation, and local installer dry-run before release.
