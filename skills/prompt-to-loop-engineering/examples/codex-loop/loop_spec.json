@@ -10,7 +10,7 @@
     "control_gates": ["policy_check", "independent_review"],
     "domain_compositions": ["codex_project_feature_delivery"],
     "cross_cutting_policies": ["observability", "budget_control", "scope_control"],
-    "rationale": "Codex coordinates a compact planner/executor loop and reads persisted prompts when each specialization is needed."
+    "rationale": "Codex activates four task-specific roles on demand in a strictly sequential feature-delivery loop."
   },
   "runtime_binding": {
     "capabilities_snapshot": {
@@ -61,7 +61,7 @@
       "budget_remaining": "integer"
     },
     "initial_state": {
-      "current_stage": "planner",
+      "current_stage": "requirements-analysis",
       "plan_ready": false,
       "implementation_ready": false,
       "validation_passed": false,
@@ -78,26 +78,29 @@
     "write_conflict_policy": "single-writer-per-field"
   },
   "control_flow": {
-    "entry_node": "planner",
+    "entry_node": "requirements-analysis",
     "edge_selection_policy": {
       "priority_order": "lower_first",
       "match_policy": "first_match",
       "equal_priority": "require_explicit_tie_breaker"
     },
     "nodes": [
-      {"id": "planner", "kind": "model", "role": "planner", "objective": "Read the project context and produce a bounded implementation plan.", "allowed_tools": ["read_files"]},
-      {"id": "executor", "kind": "model", "role": "implementer", "objective": "Apply the approved plan inside the declared write boundaries.", "allowed_tools": ["read_files", "edit_files", "run_tests"]},
-      {"id": "terminal_export", "kind": "terminal", "role": "verifier", "objective": "Export completion, blocked, or stopped status with validation evidence.", "allowed_tools": []}
+      {"id": "requirements-analysis", "kind": "model", "role": "planner", "agent_ref": "requirements-analyst", "objective": "Produce bounded requirements and acceptance criteria.", "allowed_tools": ["read_files"]},
+      {"id": "feature-implementation", "kind": "model", "role": "implementer", "agent_ref": "feature-engineer", "objective": "Implement the approved requirements inside the workspace boundary.", "allowed_tools": ["read_files", "edit_files", "run_tests"]},
+      {"id": "test-verification", "kind": "model", "role": "verifier", "agent_ref": "test-verifier", "objective": "Independently verify test and acceptance evidence without editing.", "allowed_tools": ["read_files", "run_tests"]},
+      {"id": "security-review", "kind": "model", "role": "reviewer", "agent_ref": "security-auditor", "objective": "Independently review the verified change for security regressions.", "allowed_tools": ["read_files"]},
+      {"id": "terminal-export", "kind": "terminal", "role": "terminal", "objective": "Export controller-decided completion or stop status.", "allowed_tools": []}
     ],
     "edges": [
-      {"from": "planner", "to": "executor", "condition": {"all": [{"fact": "state.plan_ready", "operator": "eq", "value": true}]}, "priority": 10},
-      {"from": "executor", "to": "planner", "condition": {"all": [{"fact": "state.validation_passed", "operator": "eq", "value": false}, {"fact": "state.budget_remaining", "operator": "gt", "value": 0}]}, "priority": 20},
-      {"from": "executor", "to": "terminal_export", "condition": {"any": [{"fact": "state.validation_passed", "operator": "eq", "value": true}, {"fact": "state.budget_remaining", "operator": "eq", "value": 0}]}, "priority": 30}
+      {"from": "requirements-analysis", "to": "feature-implementation", "condition": {"all": [{"fact": "state.plan_ready", "operator": "eq", "value": true}]}, "priority": 10},
+      {"from": "feature-implementation", "to": "test-verification", "condition": {"all": [{"fact": "state.implementation_ready", "operator": "eq", "value": true}]}, "priority": 10},
+      {"from": "test-verification", "to": "security-review", "condition": {"all": [{"fact": "state.validation_passed", "operator": "eq", "value": true}]}, "priority": 10},
+      {"from": "security-review", "to": "terminal-export", "condition": {"all": [{"fact": "state.validation_passed", "operator": "eq", "value": true}]}, "priority": 10}
     ],
     "cycles": [
       {
-        "id": "bounded_plan_execute_cycle",
-        "node_ids": ["planner", "executor"],
+        "id": "bounded_feature_delivery_cycle",
+        "node_ids": ["requirements-analysis", "feature-implementation", "test-verification", "security-review"],
         "progress_signals": [
           {"fact": "state.implementation_ready", "operator": "changes", "evidence_ref": "test_or_diff_evidence"},
           {"fact": "state.diff_fingerprint", "operator": "changes", "evidence_ref": "progress_fingerprint"}
@@ -110,12 +113,20 @@
         ]
       }
     ],
-    "terminal_nodes": {"passed": ["terminal_export"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["terminal_export"], "cancelled": []}
+    "terminal_nodes": {"passed": ["terminal-export"], "failed": [], "blocked": [], "needs_approval": [], "stopped": ["terminal-export"], "cancelled": []}
+  },
+  "delegation": {
+    "agent_registry": [
+      {"id": "requirements-analyst", "display_name": "Requirements Analyst", "specialization": "requirements-analysis", "governance_role": "planner", "rationale": "A dedicated planner converts the request into bounded acceptance criteria before implementation.", "prompt_ref": ".codex-loop/subagents/requirements-analyst.md", "activation_policy": "on_demand", "activation_nodes": ["requirements-analysis"], "allowed_tools": ["read_files"]},
+      {"id": "feature-engineer", "display_name": "Feature Engineer", "specialization": "feature-implementation", "governance_role": "implementer", "rationale": "A focused implementer applies the approved requirements within the workspace boundary.", "prompt_ref": ".codex-loop/subagents/feature-engineer.md", "activation_policy": "on_demand", "activation_nodes": ["feature-implementation"], "allowed_tools": ["read_files", "edit_files", "run_tests"]},
+      {"id": "test-verifier", "display_name": "Test Verifier", "specialization": "test-evidence-verification", "governance_role": "verifier", "rationale": "Independent read-only test verification prevents the implementer from evaluating its own work.", "prompt_ref": ".codex-loop/subagents/test-verifier.md", "activation_policy": "on_demand", "activation_nodes": ["test-verification"], "allowed_tools": ["read_files", "run_tests"]},
+      {"id": "security-auditor", "display_name": "Security Auditor", "specialization": "security-review", "governance_role": "reviewer", "rationale": "An independent read-only reviewer checks the verified change for security regressions.", "prompt_ref": ".codex-loop/subagents/security-auditor.md", "activation_policy": "on_demand", "activation_nodes": ["security-review"], "allowed_tools": ["read_files"]}
+    ]
   },
   "threshold_register": [
-    {"id": "max_runtime_seconds", "value": 900, "unit": "seconds", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard wall-clock stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "runtime budget changes"},
-    {"id": "max_iterations", "value": 3, "unit": "iterations", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard iteration stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "iteration budget changes"},
-    {"id": "max_token_budget", "value": 45000, "unit": "tokens", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard token budget stop for Codex-native scaffold execution.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "token budget changes"},
-    {"id": "max_no_progress_loops", "value": 1, "unit": "loops", "source": "default_policy:codex-native-safe-v1", "rationale": "Stop when consecutive progress fingerprints show no material change.", "calibration_scope": "bounded_plan_execute_cycle", "review_trigger": "stagnation tolerance changes"}
+    {"id": "max_runtime_seconds", "value": 900, "unit": "seconds", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard wall-clock stop for Codex-native scaffold execution.", "calibration_scope": "bounded_feature_delivery_cycle", "review_trigger": "runtime budget changes"},
+    {"id": "max_iterations", "value": 3, "unit": "iterations", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard iteration stop for Codex-native scaffold execution.", "calibration_scope": "bounded_feature_delivery_cycle", "review_trigger": "iteration budget changes"},
+    {"id": "max_token_budget", "value": 45000, "unit": "tokens", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard token budget stop for Codex-native scaffold execution.", "calibration_scope": "bounded_feature_delivery_cycle", "review_trigger": "token budget changes"},
+    {"id": "max_no_progress_loops", "value": 1, "unit": "loops", "source": "default_policy:codex-native-safe-v1", "rationale": "Stop when consecutive progress fingerprints show no material change.", "calibration_scope": "bounded_feature_delivery_cycle", "review_trigger": "stagnation tolerance changes"}
   ]
 }

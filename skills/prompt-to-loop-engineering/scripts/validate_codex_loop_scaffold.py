@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a lightweight Codex-native .codex-loop scaffold.
-
-This is a static validator. It does not execute the loop, run sub-agents, call
-tools, or emulate a Runtime Engine.
-"""
+"""Validate a static Codex-native .codex-loop scaffold."""
 
 from __future__ import annotations
 
@@ -15,23 +11,21 @@ from typing import Any
 
 
 STAGE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]*$")
-FORBIDDEN_NAMES = {
-    "runtime",
-    "state.json",
-    "checkpoint.json",
-    "checkpoints",
-    "queue",
-    "queues",
-    "database",
-    "db",
+AGENT_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+WINDOWS_DEVICE_NAMES = {
+    "con", "prn", "aux", "nul", "clock$",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
 }
-REQUIRED_FILES = [
-    "loop_spec.json",
-    "agent_manifest.json",
-    "guardrails.json",
-    "subagents/planner.md",
-    "subagents/executor.md",
-]
+FORBIDDEN_NAMES = {
+    "runtime", "state.json", "checkpoint.json", "checkpoints", "queue",
+    "queues", "database", "db",
+}
+REQUIRED_FILES = ["loop_spec.json", "agent_manifest.json", "guardrails.json"]
+ALIGNMENT_FIELDS = (
+    "id", "display_name", "specialization", "governance_role", "rationale",
+    "activation_policy", "activation_nodes", "allowed_tools",
+)
 
 
 class ScaffoldValidationError(AssertionError):
@@ -53,185 +47,216 @@ def require(condition: bool, message: str) -> None:
         raise ScaffoldValidationError(message)
 
 
+def validate_safe_agent_id(agent_id: str) -> None:
+    require(bool(AGENT_ID_RE.fullmatch(agent_id)), f"unsafe agent id: {agent_id!r}")
+    require(agent_id.casefold() not in WINDOWS_DEVICE_NAMES, f"unsafe agent id: {agent_id!r}")
+
+
+def canonical_prompt_path(agent_id: str) -> str:
+    validate_safe_agent_id(agent_id)
+    return f".codex-loop/subagents/{agent_id}.md"
+
+
 def validate_required_files(root: Path) -> None:
     for relative in REQUIRED_FILES:
-        message = (
-            f"missing subagent prompt: .codex-loop/{relative}"
-            if relative.startswith("subagents/")
-            else f"missing required scaffold file: {relative}"
-        )
-        require((root / relative).is_file(), message)
+        require((root / relative).is_file(), f"missing required scaffold file: {relative}")
 
 
 def validate_no_runtime_artifacts(root: Path) -> None:
     for path in root.rglob("*"):
-        if path.name in FORBIDDEN_NAMES or path.suffix.lower() in {".sqlite", ".db"}:
-            relative = path.relative_to(root).as_posix()
-            raise ScaffoldValidationError(f"forbidden runtime artifact: {relative}")
+        if path.name.casefold() in FORBIDDEN_NAMES or path.suffix.lower() in {".sqlite", ".db"}:
+            raise ScaffoldValidationError(f"forbidden runtime artifact: {path.relative_to(root).as_posix()}")
 
 
-def validate_status(root: Path) -> None:
+def _objects(value: Any, path: str) -> list[dict[str, Any]]:
+    require(isinstance(value, list), f"{path} must be an array")
+    require(all(isinstance(item, dict) for item in value), f"{path} entries must be objects")
+    return value
+
+
+def _tool_modes(loop_spec: dict[str, Any]) -> dict[str, str]:
+    runtime = loop_spec.get("runtime_binding")
+    require(isinstance(runtime, dict), "loop_spec.runtime_binding must be present")
+    snapshot = runtime.get("capabilities_snapshot")
+    required = runtime.get("required_capabilities")
+    require(isinstance(snapshot, dict), "capabilities_snapshot must be an object")
+    require(isinstance(required, dict), "required_capabilities must be an object")
+    tools = snapshot.get("available_tools")
+    modes = snapshot.get("tool_access_modes")
+    require(isinstance(tools, list), "capabilities_snapshot.available_tools must be an array")
+    require(isinstance(modes, dict), "capabilities_snapshot.tool_access_modes must be an object")
+    require(set(modes) == set(tools), "capabilities_snapshot tool modes must classify every available tool")
+    require(all(mode in {"read_only", "workspace_write", "external_write"} for mode in modes.values()), "invalid capability permission mode")
+    required_tools = required.get("available_tools", [])
+    required_modes = required.get("tool_access_modes", {})
+    require(set(required_tools) <= set(tools), "required tools must be available")
+    require(all(modes.get(name) == mode for name, mode in required_modes.items()), "required tool permission modes must match capability snapshot")
+    return modes
+
+
+def _node_map(loop_spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    control_flow = loop_spec.get("control_flow")
+    require(isinstance(control_flow, dict), "loop_spec.control_flow must be present")
+    nodes = _objects(control_flow.get("nodes"), "loop_spec.control_flow.nodes")
+    result: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        node_id = node.get("id")
+        require(isinstance(node_id, str) and node_id, "node id is required")
+        require(node_id not in result, f"duplicate node id: {node_id}")
+        result[node_id] = node
+    return result
+
+
+def _reachable_nodes(loop_spec: dict[str, Any], nodes: dict[str, dict[str, Any]]) -> set[str]:
+    control_flow = loop_spec["control_flow"]
+    entry = control_flow.get("entry_node")
+    require(entry in nodes, f"unknown entry node: {entry!r}")
+    adjacency = {node_id: [] for node_id in nodes}
+    for edge in _objects(control_flow.get("edges", []), "loop_spec.control_flow.edges"):
+        source, target = edge.get("from"), edge.get("to")
+        require(source in nodes and target in nodes, f"edge references unknown node: {source!r} -> {target!r}")
+        adjacency[source].append(target)
+    reachable, pending = set(), [entry]
+    while pending:
+        node_id = pending.pop()
+        if node_id not in reachable:
+            reachable.add(node_id)
+            pending.extend(adjacency[node_id])
+    return reachable
+
+
+def validate_loop_spec(loop_spec: dict[str, Any]) -> None:
+    governance = loop_spec.get("execution_governance")
+    require(isinstance(governance, dict), "loop_spec.execution_governance must be present")
+    require(governance.get("runtime_mode") == "COOPERATIVE_GOVERNANCE", "execution_governance.runtime_mode must be COOPERATIVE_GOVERNANCE")
+    require(governance.get("scheduler") == "codex_loop_dag", "execution_governance.scheduler must be codex_loop_dag")
+    require(governance.get("inline_execution_policy") == "forbidden_for_subagent_nodes", "execution_governance.inline_execution_policy must be forbidden_for_subagent_nodes")
+    modes = _tool_modes(loop_spec)
+    nodes = _node_map(loop_spec)
+    for node in nodes.values():
+        for tool in node.get("allowed_tools", []):
+            require(tool in modes, f"node {node['id']} uses undeclared tool: {tool}")
+        if node.get("role") in {"reviewer", "verifier"}:
+            non_read_only = [tool for tool in node.get("allowed_tools", []) if modes[tool] != "read_only"]
+            require(not non_read_only, f"reviewer/verifier node {node['id']!r} has non-read-only tools: {non_read_only}")
+    snapshot = loop_spec["runtime_binding"]["capabilities_snapshot"]
+    required = loop_spec["runtime_binding"]["required_capabilities"]
+    require(snapshot.get("subagents") is True, "live agent registry requires subagents=true")
+    require(required.get("subagents") is True, "live agent registry requires required subagents=true")
+    require(snapshot.get("required_subagent_reasoning_intensity") == "extended_thought", "capabilities_snapshot.required_subagent_reasoning_intensity must be extended_thought")
+    require(required.get("required_subagent_reasoning_intensity") == "extended_thought", "required_capabilities.required_subagent_reasoning_intensity must be extended_thought")
+
+
+def validate_manifest_loop_alignment(manifest: dict[str, Any], loop_spec: dict[str, Any]) -> None:
+    manifest_agents = _objects(manifest.get("subagents"), "agent_manifest.subagents")
+    delegation = loop_spec.get("delegation")
+    require(isinstance(delegation, dict), "loop_spec.delegation must be an object")
+    registry_agents = _objects(delegation.get("agent_registry"), "loop_spec.delegation.agent_registry")
+    nodes = _node_map(loop_spec)
+    reachable = _reachable_nodes(loop_spec, nodes)
+    modes = _tool_modes(loop_spec)
+
+    folded: dict[str, str] = {}
+    assignments: dict[str, str] = {}
+    manifest_by_id: dict[str, dict[str, Any]] = {}
+    for agent in manifest_agents:
+        agent_id = agent.get("id")
+        require(isinstance(agent_id, str) and agent_id, "subagent.id is required")
+        folded_id = agent_id.casefold()
+        if folded_id in folded:
+            raise ScaffoldValidationError(
+                f"case-folding collision between agent ids: {folded[folded_id]!r} and {agent_id!r}"
+            )
+        folded[folded_id] = agent_id
+        validate_safe_agent_id(agent_id)
+        require(agent_id not in manifest_by_id, f"duplicate subagent id: {agent_id}")
+        manifest_by_id[agent_id] = agent
+        expected_path = canonical_prompt_path(agent_id)
+        require(agent.get("prompt_path") == expected_path, f"subagent {agent_id} prompt_path must equal canonical prompt path {expected_path}")
+        for node_id in agent.get("activation_nodes", []):
+            require(node_id not in assignments, f"activation node {node_id!r} is assigned to multiple agents")
+            assignments[node_id] = agent_id
+        for tool in agent.get("allowed_tools", []):
+            require(tool in modes, f"subagent {agent_id} uses undeclared tool: {tool}")
+
+    registry_by_id = {agent.get("id"): agent for agent in registry_agents}
+    require(set(manifest_by_id) == set(registry_by_id), "Manifest and LoopSpec agent identities disagree")
+    for agent_id, manifest_agent in manifest_by_id.items():
+        registry_agent = registry_by_id[agent_id]
+        for field in ALIGNMENT_FIELDS:
+            label = "activation node" if field == "activation_nodes" else field
+            require(manifest_agent.get(field) == registry_agent.get(field), f"Manifest/LoopSpec {label} disagreement for agent {agent_id}")
+        require(registry_agent.get("prompt_ref") == manifest_agent.get("prompt_path"), f"Manifest/LoopSpec prompt reference disagreement for agent {agent_id}")
+        for node_id in manifest_agent.get("activation_nodes", []):
+            require(node_id in nodes, f"agent {agent_id} activation node is unknown: {node_id}")
+            require(node_id in reachable, f"agent {agent_id} activation node is unreachable: {node_id}")
+            node = nodes[node_id]
+            require(node.get("agent_ref") == agent_id, f"activation node {node_id} does not bind agent {agent_id}")
+            require(node.get("role") == manifest_agent.get("governance_role"), f"node/agent governance_role disagreement for {agent_id}")
+            require(set(node.get("allowed_tools", [])) <= set(manifest_agent.get("allowed_tools", [])), f"node {node_id} tools exceed agent {agent_id} tools")
+
+    for node in nodes.values():
+        agent_ref = node.get("agent_ref")
+        if agent_ref is not None:
+            require(agent_ref in manifest_by_id, f"node {node['id']} references undeclared agent {agent_ref}")
+            require(assignments.get(node["id"]) == agent_ref, f"node {node['id']} is not an activation node for {agent_ref}")
+
+    if any(agent.get("governance_role") == "implementer" for agent in manifest_agents):
+        evaluator_agents = {
+            node.get("agent_ref") for node_id, node in nodes.items()
+            if node_id in reachable and node.get("kind") != "terminal" and node.get("role") in {"reviewer", "verifier"}
+        }
+        implementer_ids = {agent["id"] for agent in manifest_agents if agent.get("governance_role") == "implementer"}
+        require(bool(evaluator_agents - implementer_ids - {None}), "implementer requires a reachable non-terminal reviewer/verifier with an independent agent_ref")
+
+
+def validate_manifest(root: Path, manifest: dict[str, Any], loop_spec: dict[str, Any]) -> None:
+    require(manifest.get("schema_version") == "2.0.0", "agent_manifest.schema_version must be 2.0.0")
+    host = manifest.get("codex_host")
+    require(isinstance(host, dict) and host.get("executor") == "codex", "agent_manifest.codex_host.executor must be codex")
+    require(host.get("independent_runtime_engine") is False, "agent_manifest must set independent_runtime_engine=false")
+    loop_binding = manifest.get("loop_binding")
+    require(isinstance(loop_binding, dict), "agent_manifest.loop_binding must be an object")
+    require(loop_binding.get("loop_spec_path") == ".codex-loop/loop_spec.json", "invalid loop_spec_path")
+    require(loop_binding.get("status_path") == ".codex-loop/.status", "invalid status_path")
+    require(manifest.get("guardrails_ref") == ".codex-loop/guardrails.json", "invalid guardrails_ref")
+    overlay = manifest.get("governance_overlay")
+    require(isinstance(overlay, dict), "agent_manifest.governance_overlay must be an object")
+    require(overlay.get("host_linear_fulfillment_takeover") == "forbidden", "host linear fulfillment takeover must be forbidden")
+    validate_manifest_loop_alignment(manifest, loop_spec)
+
+    declared = {agent["prompt_path"] for agent in manifest["subagents"]}
+    actual = {f".codex-loop/{path.relative_to(root).as_posix()}" for path in (root / "subagents").glob("*.md")}
+    for prompt_path in declared:
+        require((root / Path(prompt_path).relative_to(".codex-loop")).is_file(), f"missing subagent prompt: {prompt_path}")
+    undeclared = sorted(actual - declared)
+    if undeclared:
+        raise ScaffoldValidationError(f"undeclared subagent prompt: {undeclared[0]}")
+
+    manifest_modes: dict[str, str] = {}
+    for binding in _objects(manifest.get("tool_bindings"), "agent_manifest.tool_bindings"):
+        name, mode = binding.get("name"), binding.get("permission_mode")
+        require(isinstance(name, str) and name not in manifest_modes, f"duplicate or invalid Manifest tool binding: {name!r}")
+        manifest_modes[name] = mode
+    loop_modes = _tool_modes(loop_spec)
+    require(manifest_modes == loop_modes, "Manifest/LoopSpec tool permission mode disagreement")
+
+
+def validate_guardrails(guardrails: dict[str, Any]) -> None:
+    require(guardrails.get("schema_version") == "1.0.0", "guardrails.schema_version must be 1.0.0")
+    for key in ("forbidden_commands", "write_boundaries", "approval_required_actions", "stop_conditions"):
+        require(isinstance(guardrails.get(key), list), f"guardrails.{key} must be an array")
+    require(bool(guardrails["stop_conditions"]), "guardrails.stop_conditions must not be empty")
+
+
+def validate_status(root: Path, loop_spec: dict[str, Any]) -> None:
     status = root / ".status"
     if not status.exists():
         return
     lines = [line.strip() for line in status.read_text(encoding="utf-8").splitlines() if line.strip()]
     require(len(lines) == 1, ".status must contain exactly one stage id")
     require(bool(STAGE_ID_RE.fullmatch(lines[0])), f"invalid .status stage id: {lines[0]!r}")
-
-
-def validate_manifest(root: Path, manifest: dict[str, Any]) -> None:
-    require(manifest.get("schema_version") == "1.0.0", "agent_manifest.schema_version must be 1.0.0")
-    host = manifest.get("codex_host")
-    require(isinstance(host, dict), "agent_manifest.codex_host must be an object")
-    require(host.get("executor") == "codex", "agent_manifest.codex_host.executor must be codex")
-    require(
-        host.get("independent_runtime_engine") is False,
-        "agent_manifest must set independent_runtime_engine=false",
-    )
-
-    loop_binding = manifest.get("loop_binding")
-    require(isinstance(loop_binding, dict), "agent_manifest.loop_binding must be an object")
-    require(
-        loop_binding.get("loop_spec_path") == ".codex-loop/loop_spec.json",
-        "loop_binding.loop_spec_path must be .codex-loop/loop_spec.json",
-    )
-    require(
-        loop_binding.get("status_path") == ".codex-loop/.status",
-        "loop_binding.status_path must be .codex-loop/.status",
-    )
-    require(
-        manifest.get("guardrails_ref") == ".codex-loop/guardrails.json",
-        "guardrails_ref must be .codex-loop/guardrails.json",
-    )
-    overlay = manifest.get("governance_overlay")
-    require(isinstance(overlay, dict), "agent_manifest.governance_overlay must be an object")
-    require(
-        overlay.get("runtime_mode") == "COOPERATIVE_GOVERNANCE",
-        "governance_overlay.runtime_mode must be COOPERATIVE_GOVERNANCE",
-    )
-    require(
-        overlay.get("host_linear_fulfillment_takeover") == "forbidden",
-        "governance_overlay.host_linear_fulfillment_takeover must be forbidden",
-    )
-    require(
-        overlay.get("specialized_skills_policy") == "node_scoped_atomic_capabilities",
-        "governance_overlay.specialized_skills_policy must be node_scoped_atomic_capabilities",
-    )
-    require(
-        overlay.get("evidence_root") == ".codex-loop/evidence",
-        "governance_overlay.evidence_root must be .codex-loop/evidence",
-    )
-    refs = overlay.get("required_evidence_refs")
-    require(isinstance(refs, list), "governance_overlay.required_evidence_refs must be an array")
-
-    subagents = manifest.get("subagents")
-    require(isinstance(subagents, list), "agent_manifest.subagents must be an array")
-    require(1 <= len(subagents) <= 3, "agent_manifest.subagents must contain 1 to 3 entries")
-    seen_ids: set[str] = set()
-    for subagent in subagents:
-        require(isinstance(subagent, dict), "subagent entry must be an object")
-        subagent_id = subagent.get("id")
-        prompt_path = subagent.get("prompt_path")
-        require(isinstance(subagent_id, str) and subagent_id, "subagent.id is required")
-        require(subagent_id not in seen_ids, f"duplicate subagent id: {subagent_id}")
-        seen_ids.add(subagent_id)
-        require(isinstance(prompt_path, str) and prompt_path, f"subagent {subagent_id} prompt_path is required")
-        require(prompt_path.startswith(".codex-loop/subagents/"), f"subagent {subagent_id} prompt_path must stay under .codex-loop/subagents/")
-        local_prompt = root / Path(prompt_path).relative_to(".codex-loop")
-        require(local_prompt.is_file(), f"missing subagent prompt: {prompt_path}")
-
-    resume_policy = manifest.get("resume_policy")
-    require(isinstance(resume_policy, dict), "agent_manifest.resume_policy must be an object")
-    order = resume_policy.get("context_source_order")
-    require(isinstance(order, list), "resume_policy.context_source_order must be an array")
-    for required_source in [
-        ".codex-loop/agent_manifest.json",
-        ".codex-loop/loop_spec.json",
-        ".codex-loop/guardrails.json",
-    ]:
-        require(required_source in order, f"resume_policy missing context source: {required_source}")
-
-
-def validate_guardrails(guardrails: dict[str, Any]) -> None:
-    require(guardrails.get("schema_version") == "1.0.0", "guardrails.schema_version must be 1.0.0")
-    for key in [
-        "forbidden_commands",
-        "write_boundaries",
-        "approval_required_actions",
-        "stop_conditions",
-    ]:
-        require(isinstance(guardrails.get(key), list), f"guardrails.{key} must be an array")
-    require(len(guardrails["stop_conditions"]) > 0, "guardrails.stop_conditions must not be empty")
-
-
-def validate_loop_spec(loop_spec: dict[str, Any]) -> None:
-    require(isinstance(loop_spec.get("control_flow"), dict), "loop_spec.control_flow must be present")
-    governance = loop_spec.get("execution_governance")
-    require(isinstance(governance, dict), "loop_spec.execution_governance must be present")
-    require(
-        governance.get("runtime_mode") == "COOPERATIVE_GOVERNANCE",
-        "execution_governance.runtime_mode must be COOPERATIVE_GOVERNANCE",
-    )
-    require(
-        governance.get("scheduler") == "codex_loop_dag",
-        "execution_governance.scheduler must be codex_loop_dag",
-    )
-    require(
-        governance.get("inline_execution_policy") == "forbidden_for_subagent_nodes",
-        "execution_governance.inline_execution_policy must be forbidden_for_subagent_nodes",
-    )
-    runtime_binding = loop_spec.get("runtime_binding")
-    require(isinstance(runtime_binding, dict), "loop_spec.runtime_binding must be present")
-    capabilities_snapshot = runtime_binding.get("capabilities_snapshot")
-    required_capabilities = runtime_binding.get("required_capabilities")
-    require(
-        isinstance(capabilities_snapshot, dict),
-        "loop_spec.runtime_binding.capabilities_snapshot must be an object",
-    )
-    require(
-        isinstance(required_capabilities, dict),
-        "loop_spec.runtime_binding.required_capabilities must be an object",
-    )
-    available_tools = capabilities_snapshot.get("available_tools")
-    tool_access_modes = capabilities_snapshot.get("tool_access_modes")
-    require(isinstance(available_tools, list), "capabilities_snapshot.available_tools must be an array")
-    require(isinstance(tool_access_modes, dict), "capabilities_snapshot.tool_access_modes must be an object")
-    require(
-        set(tool_access_modes) == set(available_tools),
-        "capabilities_snapshot.tool_access_modes must classify every available tool exactly once",
-    )
-    require(
-        all(mode in {"read_only", "workspace_write", "external_write"} for mode in tool_access_modes.values()),
-        "capabilities_snapshot.tool_access_modes contains an invalid mode",
-    )
-    required_tools = required_capabilities.get("available_tools", [])
-    required_modes = required_capabilities.get("tool_access_modes", {})
-    require(isinstance(required_tools, list), "required_capabilities.available_tools must be an array")
-    require(isinstance(required_modes, dict), "required_capabilities.tool_access_modes must be an object")
-    require(set(required_tools) <= set(available_tools), "required tools must be available")
-    require(set(required_modes) <= set(required_tools), "required tool access modes may classify only required tools")
-    require(
-        all(tool_access_modes.get(tool_id) == mode for tool_id, mode in required_modes.items()),
-        "required tool access modes must match the capability snapshot",
-    )
-    nodes = loop_spec.get("control_flow", {}).get("nodes", [])
-    for node in nodes:
-        if isinstance(node, dict) and node.get("role") in {"reviewer", "verifier"}:
-            non_read_only = [
-                tool_id
-                for tool_id in node.get("allowed_tools", [])
-                if tool_access_modes.get(tool_id) != "read_only"
-            ]
-            require(not non_read_only, f"reviewer/verifier node {node.get('id')!r} has non-read-only tools: {non_read_only}")
-    if capabilities_snapshot.get("subagents") is True:
-        require(
-            capabilities_snapshot.get("required_subagent_reasoning_intensity") == "extended_thought",
-            "capabilities_snapshot.required_subagent_reasoning_intensity must be extended_thought when subagents=true",
-        )
-        require(
-            required_capabilities.get("required_subagent_reasoning_intensity") == "extended_thought",
-            "required_capabilities.required_subagent_reasoning_intensity must be extended_thought when subagents are required",
-        )
+    require(lines[0] in _node_map(loop_spec), f".status references unknown node id: {lines[0]}")
 
 
 def validate_scaffold(root: Path) -> None:
@@ -244,9 +269,9 @@ def validate_scaffold(root: Path) -> None:
     manifest = load_json(root / "agent_manifest.json")
     guardrails = load_json(root / "guardrails.json")
     validate_loop_spec(loop_spec)
-    validate_manifest(root, manifest)
+    validate_manifest(root, manifest, loop_spec)
     validate_guardrails(guardrails)
-    validate_status(root)
+    validate_status(root, loop_spec)
 
 
 def main(argv: list[str]) -> int:

@@ -1,9 +1,9 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "manifest_id": "codex-native-feature-agent@1",
   "created_by_skill": {
     "name": "prompt-to-loop-engineering",
-    "version": "2.0.0"
+    "version": "3.0.0"
   },
   "codex_host": {
     "executor": "codex",
@@ -30,37 +30,70 @@
     "evidence_root": ".codex-loop/evidence",
     "post_hoc_validator": "validate_dag_execution_evidence.py",
     "required_evidence_refs": [
-      ".codex-loop/evidence/activation/planner.json",
-      ".codex-loop/evidence/activation/executor.json",
-      ".codex-loop/evidence/handoff/planner_to_executor.json",
-      ".codex-loop/evidence/handoff/executor_to_terminal_export.json",
-      ".codex-loop/evidence/completion/planner.json",
-      ".codex-loop/evidence/completion/executor.json",
-      ".codex-loop/evidence/completion/terminal_export.json"
+      ".codex-loop/evidence/activation/requirements-analyst.json",
+      ".codex-loop/evidence/activation/feature-engineer.json",
+      ".codex-loop/evidence/activation/test-verifier.json",
+      ".codex-loop/evidence/activation/security-auditor.json"
     ]
   },
   "subagents": [
     {
-      "id": "planner",
-      "prompt_path": ".codex-loop/subagents/planner.md",
-      "activation_nodes": ["planner"],
-      "responsibilities": ["Clarify scope", "Produce a bounded plan", "Name verification evidence before implementation"],
+      "id": "requirements-analyst",
+      "display_name": "Requirements Analyst",
+      "specialization": "requirements-analysis",
+      "governance_role": "planner",
+      "rationale": "A dedicated planner converts the request into bounded acceptance criteria before implementation.",
+      "prompt_path": ".codex-loop/subagents/requirements-analyst.md",
+      "activation_policy": "on_demand",
+      "activation_nodes": ["requirements-analysis"],
+      "responsibilities": ["Clarify scope", "Define acceptance criteria", "Name verification evidence before implementation"],
       "allowed_tools": ["read_files"],
       "output_contract": {"format": "markdown", "required_fields": ["Plan", "Risks", "Verification"]}
     },
     {
-      "id": "executor",
-      "prompt_path": ".codex-loop/subagents/executor.md",
-      "activation_nodes": ["executor"],
+      "id": "feature-engineer",
+      "display_name": "Feature Engineer",
+      "specialization": "feature-implementation",
+      "governance_role": "implementer",
+      "rationale": "A focused implementer applies the approved requirements within the workspace boundary.",
+      "prompt_path": ".codex-loop/subagents/feature-engineer.md",
+      "activation_policy": "on_demand",
+      "activation_nodes": ["feature-implementation"],
       "responsibilities": ["Implement the approved plan", "Respect guardrails", "Run declared validation"],
       "allowed_tools": ["read_files", "edit_files", "run_tests"],
       "output_contract": {"format": "markdown", "required_fields": ["Changes", "Validation", "Next stage"]}
+    },
+    {
+      "id": "test-verifier",
+      "display_name": "Test Verifier",
+      "specialization": "test-evidence-verification",
+      "governance_role": "verifier",
+      "rationale": "Independent read-only test verification prevents the implementer from evaluating its own work.",
+      "prompt_path": ".codex-loop/subagents/test-verifier.md",
+      "activation_policy": "on_demand",
+      "activation_nodes": ["test-verification"],
+      "responsibilities": ["Run declared tests", "Verify acceptance evidence", "Report failures without editing"],
+      "allowed_tools": ["read_files", "run_tests"],
+      "output_contract": {"format": "markdown", "required_fields": ["Evidence", "Verdict", "Findings"]}
+    },
+    {
+      "id": "security-auditor",
+      "display_name": "Security Auditor",
+      "specialization": "security-review",
+      "governance_role": "reviewer",
+      "rationale": "An independent read-only reviewer checks the verified change for security regressions.",
+      "prompt_path": ".codex-loop/subagents/security-auditor.md",
+      "activation_policy": "on_demand",
+      "activation_nodes": ["security-review"],
+      "responsibilities": ["Review security-sensitive changes", "Check guardrail compliance", "Report findings without editing"],
+      "allowed_tools": ["read_files"],
+      "output_contract": {"format": "markdown", "required_fields": ["Findings", "Risk", "Verdict"]}
     }
   ],
   "tool_bindings": [
     {"name": "read_files", "purpose": "Inspect project files needed for planning and validation.", "permission_mode": "read_only", "guardrail_refs": ["workspace_scope"]},
     {"name": "edit_files", "purpose": "Modify files inside the active workspace only.", "permission_mode": "workspace_write", "guardrail_refs": ["workspace_scope", "no_destructive_git"]},
-    {"name": "run_tests", "purpose": "Run project-local deterministic tests.", "permission_mode": "workspace_write", "guardrail_refs": ["no_network_without_approval"]}
+    {"name": "run_tests", "purpose": "Run project-local deterministic tests.", "permission_mode": "read_only", "guardrail_refs": ["no_network_without_approval"]}
   ],
   "knowledge_bindings": [
     {"id": "project_readme", "source_ref": "README.md", "access_mode": "read_only", "provenance_required": true}
