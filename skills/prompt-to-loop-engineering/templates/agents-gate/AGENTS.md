@@ -22,7 +22,7 @@ Use this gate for Non-trivial tasks, including tasks that involve any of the fol
 - uncertain project structure or ambiguous user requirements;
 - data processing, reporting, workflow automation, or repeated validation;
 - tool use with write effects;
-- any task that could benefit from planner/executor/reviewer separation;
+- any task that could benefit from dynamically specialized professional instances;
 - any request to create, update, continue, or validate `.codex-loop/`.
 
 Trivial tasks may proceed without this gate only when the answer is a single explanation, a read-only lookup, or a one-file mechanical edit with no loop, no sub-agent split, and no scaffold.
@@ -36,7 +36,7 @@ Codex MUST NOT initialize `.codex-loop/`, spawn sub-agents, edit files, run writ
 The proposal MUST include:
 
 1. `Task classification`: trivial or Non-trivial, with evidence.
-2. `Lineup Recommendation`: recommended roles, usually `planner` and `executor`, with optional `reviewer` only when independent review materially reduces risk.
+2. `Lineup Recommendation`: the smallest evidence-justified finite lineup. For every proposed instance list its professional id, specialization, governance role, activation nodes, tools, and rationale. Governance roles may repeat across multiple differently specialized professional instances; there is no fixed planner/executor pair and no universal subagent count limit.
 3. `Loop Boundary`: proposed maximum iterations, default exit signal, guardrails, write boundaries, and validation command.
 4. `Scaffold decision`: whether `$prompt-to-loop-engineering` should create or update `.codex-loop/`.
 5. `Risks and approvals`: any external write, network, credential, destructive command, or irreversible action requiring approval.
@@ -62,10 +62,14 @@ After explicit user approval, Codex MUST:
 1. invoke or follow `$prompt-to-loop-engineering`;
 2. create or update the minimal `.codex-loop/` scaffold;
 3. preserve the no-independent-Runtime-Engine boundary;
-4. generate at least `.codex-loop/subagents/planner.md` and `.codex-loop/subagents/executor.md`;
+4. generate one `.codex-loop/subagents/<agent-id>.md` prompt for every approved registry entry and no undeclared prompt;
 5. keep `.status` to a single current stage id if present;
 6. run `validate_codex_loop_scaffold.py .codex-loop`;
 7. report validation output before claiming the scaffold is ready.
+
+Live activation is on demand and remains bounded by observed host capabilities; the absence of a universal registry-size limit is not a concurrency claim. The LoopSpec owns every permitted transition, predicate, threshold, and terminal meaning. The main Codex host is only its policy-bound evaluator and enforcer. Reviewer and verifier instances emit evidence only and never select edges, override thresholds, update `.status`, or decide termination.
+
+If GO-phase evidence reveals that a new professional instance is necessary, Codex MUST pause, amend, revalidate, and obtain fresh user approval before creating its prompt or activating it. Existing GO approval covers only the validated registry.
 
 If validation fails, Codex MUST fix the scaffold and rerun validation, or stop and report the exact blocking errors.
 
@@ -76,7 +80,7 @@ When the user did not specify bounds, Codex MUST use these defaults:
 - maximum loop iterations: `3`;
 - default exit signal: current-stage artifact is non-empty and passes basic schema/static validation;
 - default guardrail: never overwrite an existing same-name workspace file directly; use a timestamped destination or `.tmp/` staging directory;
-- default roles: separate `planner` and `executor`; do not merge them.
+- default lineup: the smallest evidence-justified set of request-specific professional instances; do not invent fixed filenames or universal role defaults.
 
 ## Non-negotiable constraints
 

@@ -1,0 +1,10 @@
+{
+  "schema_version": "2.0.0",
+  "evidence_type": "activation",
+  "node_id": "test-verification",
+  "subagent_id": "test-verifier",
+  "status": "activated",
+  "host_api": "multi_agent_v1.spawn_agent",
+  "system_prompt_ref": ".codex-loop/subagents/test-verifier.md",
+  "model_config": {"inherit_parent": true, "reasoning_intensity": "extended_thought", "degraded": false}
+}

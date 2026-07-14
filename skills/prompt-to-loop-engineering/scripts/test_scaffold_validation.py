@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -24,120 +26,309 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
             check=False,
         )
 
-    def test_valid_example_scaffold_passes(self) -> None:
+    @contextmanager
+    def scaffold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / ".codex-loop"
+            shutil.copytree(EXAMPLE, work)
+            yield work
+
+    @staticmethod
+    def load(work: Path, name: str) -> dict:
+        return json.loads((work / name).read_text(encoding="utf-8"))
+
+    @staticmethod
+    def save(work: Path, name: str, payload: dict) -> None:
+        (work / name).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    def assert_invalid(self, work: Path, message: str) -> None:
+        result = self.run_validator(work)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(message, result.stdout + result.stderr)
+
+    def make_workflow_scaffold(self, work: Path) -> dict:
+        spec = self.load(work, "loop_spec.json")
+        spec["architecture"]["mode"] = "workflow"
+        spec["threshold_register"] = [
+            item for item in spec["threshold_register"]
+            if item["id"] not in {
+                "max_runtime_seconds", "max_iterations", "max_token_budget",
+                "max_no_progress_loops",
+            }
+        ]
+        spec["transition_policy"]["proposal_mode"] = "none"
+        spec["transition_policy"]["proposal_source_nodes"] = []
+        spec["transition_policy"]["fallback_node"] = "terminal-export"
+        spec["control_flow"]["cycles"] = []
+        spec["control_flow"]["nodes"] = [
+            node for node in spec["control_flow"]["nodes"]
+            if node["id"] != "terminal-stopped"
+        ]
+        spec["control_flow"]["edges"] = [
+            edge for edge in spec["control_flow"]["edges"]
+            if edge["to"] != "terminal-stopped"
+        ]
+        spec["control_flow"]["terminal_nodes"]["stopped"] = []
+        spec["transition_policy"]["allowed_targets"] = [
+            node_id for node_id in spec["transition_policy"]["allowed_targets"]
+            if node_id != "terminal-stopped"
+        ]
+        self.save(work, "loop_spec.json", spec)
+        return spec
+
+    def test_persisted_workflow_does_not_inherit_agent_loop_only_hard_stops(self) -> None:
+        with self.scaffold() as work:
+            self.make_workflow_scaffold(work)
+            result = self.run_validator(work)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_persisted_workflow_still_enforces_common_policy_authority(self) -> None:
+        with self.scaffold() as work:
+            spec = self.make_workflow_scaffold(work)
+            spec["termination_control"]["policy_authority"] = "codex_host_controller"
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "LoopSpec must remain the policy authority")
+
+    def test_persisted_workflow_rejects_declared_cycle(self) -> None:
+        with self.scaffold() as work:
+            spec = self.make_workflow_scaffold(work)
+            spec["control_flow"]["cycles"] = [
+                {
+                    "id": "illegal-workflow-cycle",
+                    "node_ids": ["requirements-analysis", "feature-implementation"],
+                }
+            ]
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "workflow control_flow.cycles must be empty")
+
+    def test_valid_four_role_scaffold_passes_without_max_items_assumption(self) -> None:
+        manifest = json.loads((EXAMPLE / "agent_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(manifest["subagents"]), 4)
         result = self.run_validator(EXAMPLE)
-        self.assertEqual(
-            result.returncode,
-            0,
-            f"Expected valid scaffold.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}",
-        )
-        self.assertIn("Codex loop scaffold validation passed", result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_rejects_runtime_engine_artifacts(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / ".codex-loop"
-            shutil.copytree(EXAMPLE, work)
+        with self.scaffold() as work:
             (work / "runtime").mkdir()
+            self.assert_invalid(work, "forbidden runtime artifact")
 
-            result = self.run_validator(work)
+    def test_rejects_parent_traversal_prompt_path(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            manifest["subagents"][0]["prompt_path"] = ".codex-loop/subagents/../escape.md"
+            self.save(work, "agent_manifest.json", manifest)
+            self.assert_invalid(work, "prompt_path")
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("forbidden runtime artifact", result.stdout + result.stderr)
+    def test_rejects_windows_device_agent_ids_case_insensitively(self) -> None:
+        for unsafe_id in ("CON", "con"):
+            with self.subTest(unsafe_id=unsafe_id), self.scaffold() as work:
+                manifest = self.load(work, "agent_manifest.json")
+                manifest["subagents"][0]["id"] = unsafe_id
+                self.save(work, "agent_manifest.json", manifest)
+                self.assert_invalid(work, "unsafe agent id")
+
+    def test_rejects_case_folding_agent_id_collision(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            manifest["subagents"][1]["id"] = manifest["subagents"][0]["id"].upper()
+            self.save(work, "agent_manifest.json", manifest)
+            self.assert_invalid(work, "case-folding collision")
+
+    def test_rejects_prompt_path_that_does_not_match_agent_id(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            manifest["subagents"][0]["prompt_path"] = manifest["subagents"][1]["prompt_path"]
+            self.save(work, "agent_manifest.json", manifest)
+            self.assert_invalid(work, "canonical prompt path")
+
+    def test_rejects_undeclared_subagent_prompt_file(self) -> None:
+        with self.scaffold() as work:
+            (work / "subagents" / "undeclared.md").write_text("# Undeclared\n", encoding="utf-8")
+            self.assert_invalid(work, "undeclared subagent prompt")
+
+    def test_rejects_orphan_activation_node(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            manifest["subagents"][0]["activation_nodes"] = ["missing-node"]
+            self.save(work, "agent_manifest.json", manifest)
+            self.assert_invalid(work, "activation node")
+
+    def test_rejects_manifest_registry_role_mismatch(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            manifest["subagents"][0]["governance_role"] = "implementer"
+            self.save(work, "agent_manifest.json", manifest)
+            self.assert_invalid(work, "governance_role")
+
+    def test_rejects_node_agent_role_mismatch(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["control_flow"]["nodes"][0]["role"] = "implementer"
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "governance_role")
+
+    def test_rejects_terminal_only_evaluator_for_an_implementer(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            for node in spec["control_flow"]["nodes"]:
+                if node.get("role") in {"reviewer", "verifier"}:
+                    node["kind"] = "terminal"
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "reachable non-terminal reviewer/verifier")
+
+    def test_rejects_subagent_tool_outside_capability_snapshot(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            manifest["subagents"][0]["allowed_tools"].append("network_probe")
+            self.save(work, "agent_manifest.json", manifest)
+            self.assert_invalid(work, "undeclared tool")
+
+    def test_rejects_node_tool_outside_capability_snapshot(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["control_flow"]["nodes"][0]["allowed_tools"].append("network_probe")
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "undeclared tool")
+
+    def test_rejects_reviewer_agent_with_write_tool_hidden_from_node(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            spec = self.load(work, "loop_spec.json")
+            reviewer = next(agent for agent in manifest["subagents"] if agent["governance_role"] == "reviewer")
+            registry_reviewer = next(agent for agent in spec["delegation"]["agent_registry"] if agent["id"] == reviewer["id"])
+            reviewer["allowed_tools"].append("edit_files")
+            registry_reviewer["allowed_tools"].append("edit_files")
+            self.save(work, "agent_manifest.json", manifest)
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "reviewer/verifier agent")
+
+    def test_rejects_duplicate_registry_agent_id(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["delegation"]["agent_registry"].append(
+                dict(spec["delegation"]["agent_registry"][0])
+            )
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "duplicate registry agent id")
+
+    def test_rejects_invalid_registry_agent_id(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["delegation"]["agent_registry"][0]["id"] = "CON"
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "unsafe agent id")
+
+    def test_rejects_manifest_registry_cardinality_mismatch(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["delegation"]["agent_registry"].pop()
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "cardinality mismatch")
+
+    def test_rejects_manifest_loop_spec_tool_mode_disagreement(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            binding = next(item for item in manifest["tool_bindings"] if item["name"] == "run_tests")
+            binding["permission_mode"] = "workspace_write"
+            self.save(work, "agent_manifest.json", manifest)
+            self.assert_invalid(work, "permission mode")
+
+    def test_rejects_status_that_is_not_an_actual_node_id(self) -> None:
+        with self.scaffold() as work:
+            (work / ".status").write_text("syntactically-valid-but-missing\n", encoding="utf-8")
+            self.assert_invalid(work, "unknown node id")
+
+    def test_rejects_node_assigned_to_multiple_agents(self) -> None:
+        with self.scaffold() as work:
+            manifest = self.load(work, "agent_manifest.json")
+            manifest["subagents"][1]["activation_nodes"] = manifest["subagents"][0]["activation_nodes"][:]
+            self.save(work, "agent_manifest.json", manifest)
+            self.assert_invalid(work, "multiple agents")
 
     def test_rejects_multiline_status(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / ".codex-loop"
-            shutil.copytree(EXAMPLE, work)
-            (work / ".status").write_text("planning\nexecuting\n", encoding="utf-8")
+        with self.scaffold() as work:
+            (work / ".status").write_text("requirements-analysis\nfeature-implementation\n", encoding="utf-8")
+            self.assert_invalid(work, ".status must contain exactly one stage id")
 
-            result = self.run_validator(work)
+    def test_rejects_host_as_termination_policy_authority(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["termination_control"] = {
+                "policy_authority": "codex_host_controller",
+                "evaluation_authority": "codex_host_controller",
+                "reviewer_authority": "evidence_only",
+                "transition_policy": "lower_first_then_first_match",
+                "hard_stop_precedence": [
+                    "policy_violation", "user_interrupt", "max_runtime_seconds",
+                    "max_iterations", "max_token_budget", "max_no_progress_loops",
+                ],
+            }
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "LoopSpec must remain the policy authority")
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn(".status must contain exactly one stage id", result.stdout + result.stderr)
+    def test_rejects_reviewer_as_termination_authority(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["termination_control"] = {
+                "policy_authority": "loop_spec",
+                "evaluation_authority": "codex_host_controller",
+                "reviewer_authority": "termination_decider",
+                "transition_policy": "lower_first_then_first_match",
+                "hard_stop_precedence": [
+                    "policy_violation", "user_interrupt", "max_runtime_seconds",
+                    "max_iterations", "max_token_budget", "max_no_progress_loops",
+                ],
+            }
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "reviewer authority must be evidence_only")
 
-    def test_rejects_manifest_subagent_without_prompt(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / ".codex-loop"
-            shutil.copytree(EXAMPLE, work)
-            (work / "subagents" / "executor.md").unlink()
+    def test_rejects_missing_hard_stop_precedence_entry(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["termination_control"] = {
+                "policy_authority": "loop_spec",
+                "evaluation_authority": "codex_host_controller",
+                "reviewer_authority": "evidence_only",
+                "transition_policy": "lower_first_then_first_match",
+                "hard_stop_precedence": [
+                    "policy_violation", "user_interrupt", "max_runtime_seconds",
+                    "max_iterations", "max_token_budget",
+                ],
+            }
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "hard_stop_precedence")
 
-            result = self.run_validator(work)
+    def test_rejects_missing_hard_limit_threshold(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["threshold_register"] = [
+                item for item in spec["threshold_register"]
+                if item["id"] != "max_token_budget"
+            ]
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "missing hard-limit thresholds")
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("missing subagent prompt", result.stdout + result.stderr)
+    def test_rejects_host_invented_transition_semantics(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["transition_policy"] = {
+                "decision_authority": "model",
+                "proposal_mode": "model_proposal",
+                "proposal_source_nodes": ["feature-implementation"],
+                "allowed_targets": ["terminal-export"],
+                "proposal_schema": {},
+                "controller_validation": "optional",
+                "fallback_node": "terminal-export",
+            }
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "decision_authority")
 
-    def test_rejects_subagent_scaffold_without_reasoning_intensity_marker(self) -> None:
-        import json
-
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / ".codex-loop"
-            shutil.copytree(EXAMPLE, work)
-            spec_path = work / "loop_spec.json"
-            spec = json.loads(spec_path.read_text(encoding="utf-8"))
-            spec["runtime_binding"]["capabilities_snapshot"].pop(
-                "required_subagent_reasoning_intensity", None
-            )
-            spec_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
-
-            result = self.run_validator(work)
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "required_subagent_reasoning_intensity",
-                result.stdout + result.stderr,
-            )
-
-    def test_rejects_scaffold_without_evidence_governance(self) -> None:
-        import json
-
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / ".codex-loop"
-            shutil.copytree(EXAMPLE, work)
-
-            spec_path = work / "loop_spec.json"
-            spec = json.loads(spec_path.read_text(encoding="utf-8"))
-            spec.pop("execution_governance", None)
-            spec_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
-
-            result = self.run_validator(work)
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("execution_governance", result.stdout + result.stderr)
-
-    def test_rejects_manifest_without_governance_overlay(self) -> None:
-        import json
-
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / ".codex-loop"
-            shutil.copytree(EXAMPLE, work)
-
-            manifest_path = work / "agent_manifest.json"
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest.pop("governance_overlay", None)
-            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-
-            result = self.run_validator(work)
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("governance_overlay", result.stdout + result.stderr)
-
-    def test_rejects_verifier_with_workspace_write_tool(self) -> None:
-        import json
-
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / ".codex-loop"
-            shutil.copytree(EXAMPLE, work)
-            spec_path = work / "loop_spec.json"
-            spec = json.loads(spec_path.read_text(encoding="utf-8"))
-            for node in spec["control_flow"]["nodes"]:
-                if node["role"] == "verifier":
-                    node["allowed_tools"] = ["edit_files"]
-            spec_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
-
-            result = self.run_validator(work)
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("non-read-only tools", result.stdout + result.stderr)
+    def test_rejects_terminal_mapped_to_multiple_statuses(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["control_flow"]["terminal_nodes"]["stopped"] = ["terminal-export"]
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "maps to more than one status")
 
 
 if __name__ == "__main__":

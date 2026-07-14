@@ -5,7 +5,10 @@
     {
       "source": "tool_search",
       "query": "spawn_agent spawn_subagent subagent multi_agent",
-      "result": "no_host_native_lifecycle_tool_found"
+      "result": {
+        "status": "host_native_lifecycle_tool_found",
+        "callable": "multi_agent_v1.spawn_agent"
+      }
     }
   ],
   "runtime_capabilities": {
@@ -16,8 +19,8 @@
     "sandbox": false,
     "human_interrupt": false,
     "parallel_execution": false,
-    "subagents": false,
-    "required_subagent_reasoning_intensity": null
+    "subagents": true,
+    "required_subagent_reasoning_intensity": "extended_thought"
   },
   "policy_constraints": {
     "allowed_side_effects": [],

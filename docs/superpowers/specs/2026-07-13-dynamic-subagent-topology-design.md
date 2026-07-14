@@ -10,7 +10,7 @@ This design replaces the fixed `planner` / `executor` / optional `reviewer` scaf
 - Remove the universal three-subagent ceiling.
 - Let the validated LoopSpec topology determine the finite subagent lineup.
 - Keep authority classes small and auditable even when professional identities are open-ended.
-- Make the main Codex host the sole transition and termination controller.
+- Give LoopSpec sole policy authority over transitions and termination; make the main Codex host the policy-bound evaluator and executor.
 - Keep reviewers and verifiers as evidence providers; they never own global scheduling or termination.
 
 ## Non-goals
@@ -94,7 +94,8 @@ Every generated agent loop declares:
 ```json
 {
   "termination_control": {
-    "authority": "codex_host_controller",
+    "policy_authority": "loop_spec",
+    "evaluation_authority": "codex_host_controller",
     "reviewer_authority": "evidence_only",
     "transition_policy": "lower_first_then_first_match",
     "hard_stop_precedence": [
@@ -109,7 +110,7 @@ Every generated agent loop declares:
 }
 ```
 
-The main Codex host evaluates controller-observable predicates over reviewer evidence, progress evidence, policy state, user interrupts, and threshold counters. It selects the first matching edge under the declared priority policy, updates `.status`, and records terminal or stagnation evidence. A reviewer may emit `status=passed` or `status=failed`; it may not emit a global `continue`, `terminate`, or scheduler decision.
+LoopSpec owns the permitted edges, predicates, priority policy, thresholds, hard-stop precedence, and terminal meanings. The main Codex host has no discretion to invent or bypass those rules: it evaluates controller-observable predicates over reviewer evidence, progress evidence, policy state, user interrupts, and threshold counters, then mechanically selects the first matching declared edge. It updates `.status` and records terminal or stagnation evidence. A reviewer may emit `status=passed` or `status=failed`; it may not emit a global `continue`, `terminate`, or scheduler decision.
 
 Replace the ambiguous agent-loop `transition_policy.authority=model_proposal` wording with separate fields: `decision_authority=codex_host_controller` and `proposal_mode=model_proposal`. Model nodes may propose a target, but only the controller validates predicates and selects an edge. Reviewer and verifier nodes use `decision_rights=evidence_only`, may not write controller-owned state, and may not be listed as transition proposal sources.
 

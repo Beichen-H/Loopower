@@ -1,0 +1,9 @@
+{
+  "schema_version": "2.0.0",
+  "evidence_type": "handoff",
+  "from_node": "requirements-analysis",
+  "to_node": "feature-implementation",
+  "from_subagent_id": "requirements-analyst",
+  "to_subagent_id": "feature-engineer",
+  "status": "handoff_ready"
+}

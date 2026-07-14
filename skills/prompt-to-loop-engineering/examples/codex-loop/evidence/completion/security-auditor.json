@@ -1,0 +1,8 @@
+{
+  "schema_version": "2.0.0",
+  "evidence_type": "completion",
+  "node_id": "security-review",
+  "subagent_id": "security-auditor",
+  "status": "completed",
+  "inline_fulfillment": false
+}

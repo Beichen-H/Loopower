@@ -1,0 +1,9 @@
+{
+  "schema_version": "2.0.0",
+  "evidence_type": "handoff",
+  "from_node": "security-review",
+  "to_node": "terminal-export",
+  "from_subagent_id": "security-auditor",
+  "to_host": "codex",
+  "status": "handoff_ready"
+}

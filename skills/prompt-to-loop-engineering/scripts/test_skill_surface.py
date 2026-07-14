@@ -16,9 +16,52 @@ REPO_ROOT = SKILL_ROOT.parents[1]
 
 
 class SkillSurfaceTests(unittest.TestCase):
+    def test_agent_id_schema_patterns_reject_windows_device_names(self) -> None:
+        loop_schema = json.loads(
+            (SKILL_ROOT / "schemas" / "loop_spec.schema.json").read_text(encoding="utf-8")
+        )
+        manifest_schema = json.loads(
+            (SKILL_ROOT / "schemas" / "agent_manifest.schema.json").read_text(encoding="utf-8")
+        )
+        patterns = [
+            loop_schema["$defs"]["agent_registry_entry"]["properties"]["id"]["pattern"],
+            loop_schema["$defs"]["node"]["properties"]["agent_ref"]["pattern"],
+            manifest_schema["$defs"]["subagent"]["properties"]["id"]["pattern"],
+        ]
+        for pattern in patterns:
+            for unsafe in ("con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"):
+                self.assertIsNone(re.fullmatch(pattern, unsafe), (pattern, unsafe))
+            self.assertIsNotNone(re.fullmatch(pattern, "security-auditor"))
+
     def require_full_repository(self) -> None:
         if not (REPO_ROOT / "README.md").is_file():
             self.skipTest("repository-root assets are not present in installed-skill mode")
+
+    def test_v3_manifest_accepts_dynamic_professional_roles_without_fixed_max(self):
+        manifest = json.loads(
+            (SKILL_ROOT / "schemas/agent_manifest.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        subagents = manifest["properties"]["subagents"]
+        self.assertNotIn("maxItems", subagents)
+        role = manifest["$defs"]["subagent"]["properties"]["governance_role"]
+        self.assertEqual(
+            role["enum"], ["planner", "implementer", "reviewer", "verifier"]
+        )
+        self.assertIn("specialization", manifest["$defs"]["subagent"]["required"])
+
+    def test_v3_loop_schema_has_registry_identity_and_controller_termination(self):
+        schema = json.loads(
+            (SKILL_ROOT / "schemas/loop_spec.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertIn("agent_ref", schema["$defs"]["node"]["properties"])
+        self.assertIn(
+            "subject_nodes", schema["$defs"]["criteria_binding"]["required"]
+        )
+        self.assertIn("termination_control", schema["required"])
 
     def test_skill_frontmatter_matches_folder(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -46,6 +89,11 @@ class SkillSurfaceTests(unittest.TestCase):
         )
 
     def test_runtime_free_contract_assets_exist(self) -> None:
+        manifest = json.loads(
+            (SKILL_ROOT / "examples/codex-loop/agent_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
         required = [
             "templates/agents-gate/AGENTS.md",
             "schemas/loop_design_request.schema.json",
@@ -73,18 +121,17 @@ class SkillSurfaceTests(unittest.TestCase):
             "examples/codex-loop/loop_spec.json",
             "examples/codex-loop/agent_manifest.json",
             "examples/codex-loop/guardrails.json",
-            "examples/codex-loop/subagents/planner.md",
-            "examples/codex-loop/subagents/executor.md",
-            "examples/codex-loop/evidence/activation/planner.json",
-            "examples/codex-loop/evidence/activation/executor.json",
-            "examples/codex-loop/evidence/handoff/planner_to_executor.json",
-            "examples/codex-loop/evidence/handoff/executor_to_terminal_export.json",
-            "examples/codex-loop/evidence/completion/planner.json",
-            "examples/codex-loop/evidence/completion/executor.json",
-            "examples/codex-loop/evidence/completion/terminal_export.json",
             "examples/codex-loop/evidence/progress/iteration_1.json",
             "examples/codex-loop/evidence/progress/iteration_2.json",
         ]
+        required.extend(
+            f"examples/codex-loop/subagents/{agent['id']}.md"
+            for agent in manifest["subagents"]
+        )
+        required.extend(
+            f"examples/codex-loop/{ref.removeprefix('.codex-loop/')}"
+            for ref in manifest["governance_overlay"]["required_evidence_refs"]
+        )
         if (REPO_ROOT / "README.md").is_file():
             required.append("../../examples/agents-gate/AGENTS.md")
         missing = [relative for relative in required if not (SKILL_ROOT / relative).is_file()]
@@ -117,17 +164,20 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `2.0.0`", skill)
+        self.assertIn("**Skill version:** `3.0.0`", skill)
+        self.assertIn("### v3.0.0 (2026-07-13)", readme)
+        self.assertIn("### v3.0.0 (2026-07-13)", readme_cn)
         self.assertIn("### v2.0.0 (2026-07-10)", readme)
         self.assertIn("### v2.0.0 (2026-07-10)", readme_cn)
-        self.assertEqual(
-            json.loads((SKILL_ROOT / "loop_spec.json").read_text(encoding="utf-8"))["skill_version"],
-            "2.0.0",
+        self_design = json.loads(
+            (SKILL_ROOT / "loop_spec.json").read_text(encoding="utf-8")
         )
+        self.assertEqual(self_design["skill_version"], "3.0.0")
+        self.assertEqual(self_design["spec_id"], "prompt-to-loop-engineering@3.0.0")
         manifest = json.loads(
             (SKILL_ROOT / "examples" / "codex-loop" / "agent_manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["created_by_skill"]["version"], "2.0.0")
+        self.assertEqual(manifest["created_by_skill"]["version"], "3.0.0")
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -306,12 +356,69 @@ class SkillSurfaceTests(unittest.TestCase):
             "non-empty artifact check and basic schema/static validation",
             "MUST NOT overwrite an existing same-name workspace file directly",
             "timestamped destination or a `.tmp/` staging directory",
-            "`planner.md`",
-            "`executor.md`",
-            "MUST NOT merge these two roles",
+            "smallest evidence-justified lineup",
+            "no universal subagent count limit",
         ]
         missing = [phrase for phrase in required_phrases if phrase not in content]
         self.assertEqual(missing, [], f"Missing defensive design phrases: {missing}")
+
+    def test_dynamic_professional_role_contract_is_documented(self) -> None:
+        content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        required_phrases = [
+            "Dynamic Professional Role Contract",
+            "delegation.agent_registry",
+            "termination_control",
+            "codex_host_controller",
+            "reviewer_authority=evidence_only",
+            "no universal subagent count limit",
+            "multiple planners, implementers, reviewers, or verifiers",
+            "pause, amend, revalidate, and obtain fresh user approval",
+            "<agent-id>.md",
+        ]
+        missing = [phrase for phrase in required_phrases if phrase not in content]
+        self.assertEqual(missing, [], f"Missing dynamic role phrases: {missing}")
+
+    def test_agents_gate_uses_dynamic_lineup_and_copies_are_identical(self) -> None:
+        packaged = (SKILL_ROOT / "templates" / "agents-gate" / "AGENTS.md").read_bytes()
+        example = (REPO_ROOT / "examples" / "agents-gate" / "AGENTS.md").read_bytes()
+        self.assertEqual(packaged, example)
+        content = packaged.decode("utf-8")
+        for stale_path in ("planner.md", "executor.md"):
+            self.assertNotIn(stale_path, content)
+        for field in (
+            "professional id",
+            "specialization",
+            "governance role",
+            "activation nodes",
+            "tools",
+            "rationale",
+        ):
+            self.assertIn(field, content)
+        self.assertIn("pause, amend, revalidate, and obtain fresh user approval", content)
+
+    def test_active_contracts_reject_stale_fixed_cast_language(self) -> None:
+        active_contracts = {
+            "SKILL.md": (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8"),
+            "packaged AGENTS.md": (
+                SKILL_ROOT / "templates" / "agents-gate" / "AGENTS.md"
+            ).read_text(encoding="utf-8"),
+            "example AGENTS.md": (
+                REPO_ROOT / "examples" / "agents-gate" / "AGENTS.md"
+            ).read_text(encoding="utf-8"),
+        }
+        forbidden = [
+            "`lineup_recommendation`: proposed roles such as `planner`, `executor`, and optional `reviewer`",
+            "`subagents/` MUST include both `planner.md` and `executor.md`",
+            "generate at least `.codex-loop/subagents/planner.md` and `.codex-loop/subagents/executor.md`",
+            "Default sub-agent split: `subagents/` MUST include both",
+        ]
+        violations = [
+            f"{name}: {phrase}"
+            for name, content in active_contracts.items()
+            for phrase in forbidden
+            if phrase in content
+        ]
+        self.assertEqual(violations, [], f"Stale fixed-cast contract language: {violations}")
 
     def test_readmes_describe_public_clone_install_and_codex_usage(self) -> None:
         self.require_full_repository()
@@ -342,6 +449,43 @@ class SkillSurfaceTests(unittest.TestCase):
                 "inline execution",
             ]:
                 self.assertIn(phrase, content)
+
+    def test_readmes_publish_dynamic_topology_and_authority_boundaries(self) -> None:
+        self.require_full_repository()
+        readmes = {
+            "README.md": (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+            "README-CN.md": (REPO_ROOT / "README-CN.md").read_text(
+                encoding="utf-8"
+            ),
+        }
+        required = [
+            "topology-derived professional roles",
+            "requirements-analyst",
+            "feature-engineer",
+            "test-verifier",
+            "security-auditor",
+            "not reserved roles",
+            "no universal declared-role ceiling",
+            "finite, statically validated",
+            "capability-bound concurrency",
+            "LoopSpec owns transition and termination policy",
+            "Codex host controller mechanically evaluates",
+            "reviewers and verifiers produce evidence only",
+            "v2-to-v3 migration",
+            "Manifest schema `2.0.0`",
+            "regenerate v2 scaffolds",
+        ]
+        forbidden = [
+            ".codex-loop/subagents/planner.md  -> planner live process",
+            ".codex-loop/subagents/executor.md -> executor live process",
+            "|   |-- planner.md",
+            "|   `-- executor.md",
+        ]
+        for name, content in readmes.items():
+            missing = [phrase for phrase in required if phrase not in content]
+            self.assertEqual(missing, [], f"{name} missing v3 guidance: {missing}")
+            stale = [phrase for phrase in forbidden if phrase in content]
+            self.assertEqual(stale, [], f"{name} has fixed-cast mappings: {stale}")
 
     def test_loop_spec_schema_and_example_log_subagent_reasoning_intensity(self) -> None:
         import json
@@ -407,20 +551,23 @@ class SkillSurfaceTests(unittest.TestCase):
             overlay["specialized_skills_policy"],
             "node_scoped_atomic_capabilities",
         )
-        self.assertIn(
-            ".codex-loop/evidence/activation/planner.json",
-            overlay["required_evidence_refs"],
-        )
+        for agent in manifest["subagents"]:
+            self.assertIn(
+                f".codex-loop/evidence/activation/{agent['id']}.json",
+                overlay["required_evidence_refs"],
+            )
 
     def test_example_subagent_prompts_request_reasoning_alignment(self) -> None:
-        for relative in [
-            "examples/codex-loop/subagents/planner.md",
-            "examples/codex-loop/subagents/executor.md",
-        ]:
+        manifest = json.loads(
+            (SKILL_ROOT / "examples/codex-loop/agent_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for agent in manifest["subagents"]:
+            relative = f"examples/codex-loop/subagents/{agent['id']}.md"
             content = (SKILL_ROOT / relative).read_text(encoding="utf-8")
             for phrase in [
                 "reasoning_intensity = extended_thought",
-                "5.5 ultra-high",
                 "model_configuration_degraded",
             ]:
                 self.assertIn(phrase, content, f"{relative} missing {phrase}")
@@ -489,6 +636,8 @@ class SkillSurfaceTests(unittest.TestCase):
         installer = (REPO_ROOT / "install_local.py").read_text(encoding="utf-8")
         for token in ['"__pycache__"', '".pyc"', '".pyo"']:
             self.assertIn(token, installer)
+        self.assertIn('encoding="utf-8"', installer)
+        self.assertIn('errors="replace"', installer)
 
     def test_local_install_scripts_are_packaged_and_documented(self) -> None:
         self.require_full_repository()
@@ -587,6 +736,8 @@ class SkillSurfaceTests(unittest.TestCase):
     def test_published_loop_specs_cover_schema_root_requirements(self) -> None:
         schema = json.loads((SKILL_ROOT / "schemas" / "loop_spec.schema.json").read_text(encoding="utf-8"))
         required = set(schema["required"])
+        # Task 2 migrates the published v2 examples to the v3 controller contract.
+        legacy_required = required - {"termination_control"}
         node_required = set(schema["$defs"]["node"]["required"])
         self.assertNotIn("execution_governance", required)
         documents = {
@@ -595,7 +746,7 @@ class SkillSurfaceTests(unittest.TestCase):
             "agent_loop": json.loads((SKILL_ROOT / "examples" / "agent_loop.json").read_text(encoding="utf-8"))["loop_spec"],
         }
         for name, spec in documents.items():
-            missing = required - set(spec)
+            missing = legacy_required - set(spec)
             self.assertEqual(missing, set(), f"{name} misses LoopSpec schema fields: {sorted(missing)}")
             for node in spec["control_flow"]["nodes"]:
                 node_missing = node_required - set(node)

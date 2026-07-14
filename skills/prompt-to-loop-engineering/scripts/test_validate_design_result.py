@@ -73,7 +73,335 @@ def minimal_request(**capability_overrides: object) -> dict:
     }
 
 
+def affirmative_subagent_discovery() -> dict:
+    return {
+        "source": "tool_search",
+        "query": "spawn_agent spawn_subagent subagent multi_agent",
+        "result": {
+            "status": "host_native_lifecycle_tool_found",
+            "callable": "multi_agent_v1.spawn_agent",
+        },
+    }
+
+
+def add_agent(spec, *, agent_id, governance_role, node_id, tools):
+    spec["delegation"]["agent_registry"].append({
+        "id": agent_id,
+        "display_name": agent_id.replace("-", " ").title(),
+        "specialization": agent_id,
+        "governance_role": governance_role,
+        "rationale": f"Node {node_id} requires an isolated specialist.",
+        "prompt_ref": f".codex-loop/subagents/{agent_id}.md",
+        "activation_policy": "on_demand",
+        "activation_nodes": [node_id],
+        "allowed_tools": tools,
+    })
+
+
+def four_agent_payload() -> dict:
+    payload = load_example("agent_loop.json")
+    spec = payload["loop_spec"]
+    spec["delegation"]["agent_registry"] = []
+    spec["transition_policy"] = {
+        "decision_authority": "codex_host_controller",
+        "proposal_mode": "model_proposal",
+        "proposal_source_nodes": ["choose_next_action"],
+        "allowed_targets": ["observe_evidence", "export_passed", "export_stopped"],
+        "proposal_schema": {
+            "next_node": "string",
+            "reason_summary": "string",
+            "expected_state_change": "array",
+            "requested_tools": "array",
+        },
+        "controller_validation": "required",
+        "fallback_node": "export_stopped",
+    }
+    spec["termination_control"] = {
+        "policy_authority": "loop_spec",
+        "evaluation_authority": "codex_host_controller",
+        "reviewer_authority": "evidence_only",
+        "transition_policy": "lower_first_then_first_match",
+        "hard_stop_precedence": [
+            "policy_violation",
+            "user_interrupt",
+            "max_runtime_seconds",
+            "max_iterations",
+            "max_token_budget",
+            "max_no_progress_loops",
+        ],
+    }
+
+    nodes = spec["control_flow"]["nodes"]
+    for node in nodes:
+        node.pop("agent_ref", None)
+        if node["id"] == "observe_evidence":
+            node["agent_ref"] = "evidence-collector"
+            node["state_write_scope"] = ["observations"]
+        elif node["id"] == "choose_next_action":
+            node["agent_ref"] = "diagnostic-strategist"
+    nodes.extend([
+        {
+            "id": "remediation_plan",
+            "kind": "model",
+            "role": "implementer",
+            "agent_ref": "remediation-architect",
+            "objective": "Produce a criterion-scoped remediation plan from the diagnosis.",
+            "supports_acceptance_criteria": ["AC-1"],
+            "input_schema": {},
+            "output_schema": {},
+            "allowed_tools": [],
+            "state_read_scope": ["observations", "diagnosis"],
+            "state_write_scope": ["diagnosis"],
+            "evaluator_refs": [],
+            "retry_policy_ref": "model_schema_retry",
+            "timeout_policy_ref": "model_timeout",
+            "checkpoint_before": False,
+            "checkpoint_after": False,
+        },
+        {
+            "id": "quality_review",
+            "kind": "model",
+            "role": "reviewer",
+            "agent_ref": "quality-auditor",
+            "objective": "Independently evaluate the remediation plan and report evidence.",
+            "supports_acceptance_criteria": ["AC-1"],
+            "input_schema": {},
+            "output_schema": {},
+            "allowed_tools": [],
+            "state_read_scope": ["observations", "diagnosis"],
+            "state_write_scope": [],
+            "evaluator_refs": ["observation_coverage_check"],
+            "retry_policy_ref": "model_schema_retry",
+            "timeout_policy_ref": "model_timeout",
+            "checkpoint_before": False,
+            "checkpoint_after": False,
+        },
+    ])
+    edges = spec["control_flow"]["edges"]
+    edges.insert(3, {
+        "from": "choose_next_action",
+        "to": "remediation_plan",
+        "condition": {"all": [{"fact": "state.progress_detected", "operator": "eq", "value": True}]},
+        "priority": 25,
+    })
+    edges.extend([
+        {
+            "from": "remediation_plan",
+            "to": "quality_review",
+            "condition": {"all": [{"fact": "state.progress_detected", "operator": "eq", "value": True}]},
+            "priority": 10,
+        },
+        {
+            "from": "quality_review",
+            "to": "observe_evidence",
+            "condition": {"all": [{"fact": "state.acceptance_passed", "operator": "eq", "value": False}]},
+            "priority": 10,
+        },
+    ])
+    spec["control_flow"]["cycles"][0]["node_ids"].extend(
+        ["remediation_plan", "quality_review"]
+    )
+    binding = spec["evaluation"]["criteria_bindings"][0]
+    binding["evaluator_node"] = "quality_review"
+    binding["subject_nodes"] = ["remediation_plan"]
+    add_agent(spec, agent_id="evidence-collector", governance_role="verifier", node_id="observe_evidence", tools=["read_observation"])
+    add_agent(spec, agent_id="diagnostic-strategist", governance_role="planner", node_id="choose_next_action", tools=[])
+    add_agent(spec, agent_id="remediation-architect", governance_role="implementer", node_id="remediation_plan", tools=[])
+    add_agent(spec, agent_id="quality-auditor", governance_role="reviewer", node_id="quality_review", tools=[])
+    return payload
+
+
 class DesignResultValidationTests(unittest.TestCase):
+    def test_accepts_arbitrary_professional_ids_and_more_than_three_agents(self) -> None:
+        payload = four_agent_payload()
+
+        validate_design_result(payload, load_request("agent_loop.json"))
+
+        self.assertEqual(len(payload["loop_spec"]["delegation"]["agent_registry"]), 4)
+
+    def test_bound_agent_roles_require_subagent_capability_and_reasoning_contract(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["runtime_capabilities"]["subagents"] = True
+        request["runtime_capabilities"][
+            "required_subagent_reasoning_intensity"
+        ] = "extended_thought"
+        payload["loop_spec"]["runtime_binding"]["capabilities_snapshot"] = copy.deepcopy(
+            request["runtime_capabilities"]
+        )
+        requirements = payload["loop_spec"]["runtime_binding"]["required_capabilities"]
+        requirements["subagents"] = True
+        requirements["required_subagent_reasoning_intensity"] = "extended_thought"
+
+        cases = {
+            "runtime capability": ("subagents capability", lambda result, raw: (
+                raw["runtime_capabilities"].update({
+                    "subagents": False,
+                    "required_subagent_reasoning_intensity": None,
+                }),
+                raw.update({"known_context": [{
+                    "source": "tool_search",
+                    "query": "spawn_agent spawn_subagent subagent multi_agent",
+                    "result": "no_host_native_lifecycle_tool_found",
+                }]}),
+                result["loop_spec"]["runtime_binding"].update({
+                    "capabilities_snapshot": copy.deepcopy(raw["runtime_capabilities"])
+                }),
+                result["loop_spec"]["runtime_binding"]["required_capabilities"].pop("subagents"),
+                result["loop_spec"]["runtime_binding"]["required_capabilities"].pop(
+                    "required_subagent_reasoning_intensity"
+                ),
+            )),
+            "required capability": ("require subagents explicitly", lambda result, raw: (
+                result["loop_spec"]["runtime_binding"]["required_capabilities"].pop("subagents"),
+            )),
+            "snapshot reasoning": ("reasoning intensity is unavailable", lambda result, raw: (
+                raw["runtime_capabilities"].update({
+                    "required_subagent_reasoning_intensity": None
+                }),
+                result["loop_spec"]["runtime_binding"].update({
+                    "capabilities_snapshot": copy.deepcopy(raw["runtime_capabilities"])
+                }),
+            )),
+            "required reasoning": ("extended_thought", lambda result, raw: (
+                result["loop_spec"]["runtime_binding"]["required_capabilities"].pop(
+                    "required_subagent_reasoning_intensity"
+                ),
+            )),
+        }
+        for name, (message, mutate) in cases.items():
+            with self.subTest(name=name):
+                invalid_payload = copy.deepcopy(payload)
+                invalid_request = copy.deepcopy(request)
+                mutate(invalid_payload, invalid_request)
+                with self.assertRaisesRegex(DesignValidationError, message):
+                    validate_design_result(invalid_payload, invalid_request)
+
+    def test_rejects_subagents_true_with_negative_discovery_evidence(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["known_context"] = [{
+            "source": "tool_search",
+            "query": "spawn_agent spawn_subagent subagent multi_agent",
+            "result": "no_host_native_lifecycle_tool_found",
+        }]
+
+        with self.assertRaisesRegex(DesignValidationError, "contradicts.*subagents=true"):
+            validate_design_result(payload, request)
+
+    def test_rejects_subagents_true_without_affirmative_discovery_evidence(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["known_context"] = []
+
+        with self.assertRaisesRegex(DesignValidationError, "host_native_lifecycle_tool_found"):
+            validate_design_result(payload, request)
+
+    def test_accepts_subagents_true_with_affirmative_discovery_evidence(self) -> None:
+        payload = load_example("agent_loop.json")
+        request = load_request("agent_loop.json")
+        request["known_context"] = [affirmative_subagent_discovery()]
+
+        validate_design_result(payload, request)
+
+    def test_rejects_unknown_agent_ref(self) -> None:
+        payload = four_agent_payload()
+        payload["loop_spec"]["control_flow"]["nodes"][0]["agent_ref"] = "missing-specialist"
+
+        with self.assertRaisesRegex(DesignValidationError, "unknown agent_ref"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_agent_governance_role_mismatch(self) -> None:
+        payload = four_agent_payload()
+        payload["loop_spec"]["delegation"]["agent_registry"][0]["governance_role"] = "planner"
+
+        with self.assertRaisesRegex(DesignValidationError, "governance role"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_orphan_registry_entry(self) -> None:
+        payload = four_agent_payload()
+        add_agent(
+            payload["loop_spec"],
+            agent_id="orphan-specialist",
+            governance_role="planner",
+            node_id="observe_evidence",
+            tools=[],
+        )
+
+        with self.assertRaisesRegex(DesignValidationError, "bound back"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_duplicate_role_signature(self) -> None:
+        payload = four_agent_payload()
+        duplicate = copy.deepcopy(payload["loop_spec"]["delegation"]["agent_registry"][1])
+        duplicate["id"] = "alternate-strategist"
+        duplicate["display_name"] = "Alternate Strategist"
+        duplicate["prompt_ref"] = ".codex-loop/subagents/alternate-strategist.md"
+        payload["loop_spec"]["delegation"]["agent_registry"].append(duplicate)
+
+        with self.assertRaisesRegex(DesignValidationError, "duplicate role signature"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_missing_subject_nodes(self) -> None:
+        payload = four_agent_payload()
+        payload["loop_spec"]["evaluation"]["criteria_bindings"][0].pop("subject_nodes")
+
+        with self.assertRaisesRegex(DesignValidationError, "subject_nodes"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_implementer_self_evaluation_through_second_node(self) -> None:
+        payload = four_agent_payload()
+        spec = payload["loop_spec"]
+        for node in spec["control_flow"]["nodes"]:
+            if node["id"] == "quality_review":
+                node["agent_ref"] = "remediation-architect"
+                node["role"] = "implementer"
+        spec["delegation"]["agent_registry"][2]["activation_nodes"].append("quality_review")
+        spec["delegation"]["agent_registry"] = [
+            agent for agent in spec["delegation"]["agent_registry"]
+            if agent["id"] != "quality-auditor"
+        ]
+
+        with self.assertRaisesRegex(DesignValidationError, "independent agent"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_reviewer_transition_proposals(self) -> None:
+        payload = four_agent_payload()
+        payload["loop_spec"]["transition_policy"]["proposal_source_nodes"] = ["quality_review"]
+
+        with self.assertRaisesRegex(DesignValidationError, "evidence-only"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_reviewer_writes_to_controller_owned_state(self) -> None:
+        payload = four_agent_payload()
+        for node in payload["loop_spec"]["control_flow"]["nodes"]:
+            if node["id"] == "quality_review":
+                node["state_write_scope"] = ["acceptance_passed"]
+
+        with self.assertRaisesRegex(DesignValidationError, "controller-owned"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_missing_termination_control(self) -> None:
+        payload = four_agent_payload()
+        payload["loop_spec"].pop("termination_control")
+
+        with self.assertRaisesRegex(DesignValidationError, "termination_control"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
+    def test_rejects_windows_reserved_agent_id(self) -> None:
+        payload = four_agent_payload()
+        spec = payload["loop_spec"]
+        agent = spec["delegation"]["agent_registry"][0]
+        old_id = agent["id"]
+        agent["id"] = "nul"
+        agent["prompt_ref"] = ".codex-loop/subagents/nul.md"
+        for node in spec["control_flow"]["nodes"]:
+            if node.get("agent_ref") == old_id:
+                node["agent_ref"] = "nul"
+
+        with self.assertRaisesRegex(DesignValidationError, "reserved device name"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
     def test_rejects_tampered_effective_request(self) -> None:
         request = minimal_request()
         effective, report = normalize_design_request(request)
@@ -326,6 +654,9 @@ class DesignResultValidationTests(unittest.TestCase):
                 node["role"] = "planner"
             elif node["id"] == "choose_next_action":
                 node["role"] = "implementer"
+        registry = payload["loop_spec"]["delegation"]["agent_registry"]
+        registry[0]["governance_role"] = "planner"
+        registry[1]["governance_role"] = "implementer"
         with self.assertRaisesRegex(DesignValidationError, "reviewer or verifier"):
             validate_design_result(payload, load_request("agent_loop.json"))
 
@@ -335,6 +666,9 @@ class DesignResultValidationTests(unittest.TestCase):
             if node["id"] == "observe_evidence":
                 node["role"] = "reviewer"
                 node["allowed_tools"] = ["edit_files"]
+        agent = payload["loop_spec"]["delegation"]["agent_registry"][0]
+        agent["governance_role"] = "reviewer"
+        agent["allowed_tools"] = ["edit_files"]
         payload["loop_spec"]["tools"]["contracts"].append(
             {
                 "id": "edit_files",
@@ -360,6 +694,9 @@ class DesignResultValidationTests(unittest.TestCase):
             if node["id"] == "observe_evidence":
                 node["role"] = "reviewer"
                 node["allowed_tools"] = ["shell_command"]
+        agent = payload["loop_spec"]["delegation"]["agent_registry"][0]
+        agent["governance_role"] = "reviewer"
+        agent["allowed_tools"] = ["shell_command"]
         payload["loop_spec"]["tools"]["contracts"].append(
             {
                 "id": "shell_command",
@@ -415,11 +752,15 @@ class DesignResultValidationTests(unittest.TestCase):
     def test_subagent_requirement_needs_extended_reasoning(self) -> None:
         payload = load_example("agent_loop.json")
         request = load_request("agent_loop.json")
-        request["runtime_capabilities"]["subagents"] = True
+        request["runtime_capabilities"][
+            "required_subagent_reasoning_intensity"
+        ] = None
         payload["loop_spec"]["runtime_binding"]["capabilities_snapshot"] = copy.deepcopy(
             request["runtime_capabilities"]
         )
-        payload["loop_spec"]["runtime_binding"]["required_capabilities"]["subagents"] = True
+        payload["loop_spec"]["runtime_binding"]["required_capabilities"][
+            "required_subagent_reasoning_intensity"
+        ] = None
 
         with self.assertRaisesRegex(DesignValidationError, "extended_thought"):
             validate_design_result(payload, request)
@@ -431,9 +772,15 @@ class DesignResultValidationTests(unittest.TestCase):
                 node["role"] = "reviewer"
             elif node["id"] == "choose_next_action":
                 node["role"] = "implementer"
+        registry = payload["loop_spec"]["delegation"]["agent_registry"]
+        registry[0]["governance_role"] = "reviewer"
+        registry[1]["governance_role"] = "implementer"
         payload["loop_spec"]["evaluation"]["criteria_bindings"][0][
             "evaluator_node"
         ] = "choose_next_action"
+        payload["loop_spec"]["evaluation"]["criteria_bindings"][0][
+            "subject_nodes"
+        ] = ["observe_evidence"]
 
         with self.assertRaisesRegex(DesignValidationError, "reviewer or verifier"):
             validate_design_result(payload, load_request("agent_loop.json"))
