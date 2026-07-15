@@ -2,6 +2,8 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
+**Governed sub-agent loops for every host-capable GPT model.** Instead of waiting for a model to delegate spontaneously, Loopower turns sub-agent activation, handoffs, loop budgets, and exit conditions into validated project-local contracts.
+
 The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `3.1.0`: a Codex-native Loop Agent Builder with topology-derived professional roles, verified request normalization, primary-output guarantees, configuration-bound evidence, atomic replan approval, Evidence-Locked DAG Execution Governance, and access-mode-based reviewer isolation. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and governs approval, host-native live sub-agent activation, and post-hoc evidence validation without taking exclusive control of the session.
 
 This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
@@ -136,11 +138,11 @@ Version `1.4.0` adds the `Agent Lifecycle Activation Contract`.
 
 ### Making sub-agent delegation explicit across model presets
 
-In project-local testing, the `5.6 Sol Ultra` preset was the only tested preset that consistently initiated sub-agents without an explicit delegation contract. This is an observed routing tendency, not evidence that other models are intrinsically unable to use sub-agents. Loopower removes reliance on spontaneous delegation: it discovers the host lifecycle capability, derives a task-specific sub-agent lineup from the LoopSpec topology, persists each role prompt, and requires explicit live-process activation after approval.
+In project-local testing, the `5.6 Sol Ultra` preset was the only tested preset that consistently initiated sub-agents without an explicit delegation contract. This matches the [current Codex documentation](https://developers.openai.com/codex/agent-configuration/subagents): Ultra may delegate proactively, while other intelligence levels can spawn sub-agents after a direct request or applicable project/Skill instruction. This is a routing distinction, not evidence that other models are intrinsically unable to use sub-agents. Loopower removes reliance on spontaneous delegation: it discovers the host lifecycle capability, derives a task-specific sub-agent lineup from the LoopSpec topology, persists each role prompt, and requires explicit live-process activation after approval.
 
 As a result, standard models and normal reasoning presets can participate in governed sub-agent loops when the active Codex host exposes an authorized `spawn_agent`, `spawn_subagent`, or equivalent lifecycle API. The Skill does not create a missing host API, change model entitlements, bypass permissions, or guarantee identical delegation quality across models. If lifecycle capability is absent, validation fails closed instead of pretending that inline role-play is a live sub-agent process.
 
-The lineup is topology-derived rather than fixed: a task may activate a researcher, data engineer, implementation specialist, security auditor, independent verifier, or another justified professional role. The LoopSpec—not a hard-coded three-agent template—defines the finite agent set, handoffs, loop budgets, progress signals, reviewer isolation, and termination paths.
+The lineup is topology-derived rather than fixed: a task may activate a researcher, data engineer, implementation specialist, security auditor, independent verifier, or another justified professional role. The LoopSpec defines the finite agent set, handoffs, loop budgets, progress signals, reviewer isolation, and termination paths.
 
 After a user gives explicit `GO`, and after `.codex-loop/` has been written and validated, Codex must not treat the scaffold as passive text only. If the current Codex host exposes `spawn_subagent`, `spawn_agent`, or an equivalent native sub-agent lifecycle API, Codex must activate approved roles from `.codex-loop/subagents/` as live host processes.
 

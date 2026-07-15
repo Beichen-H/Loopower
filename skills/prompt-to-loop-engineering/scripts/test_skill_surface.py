@@ -499,6 +499,7 @@ class SkillSurfaceTests(unittest.TestCase):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
         for phrase in (
+            "Governed sub-agent loops for every host-capable GPT model",
             "Making sub-agent delegation explicit across model presets",
             "standard models and normal reasoning presets",
             "does not create a missing host API",
@@ -506,6 +507,7 @@ class SkillSurfaceTests(unittest.TestCase):
         ):
             self.assertIn(phrase, readme)
         for phrase in (
+            "让所有宿主能力兼容的 GPT 模型使用受治理的 Sub-agent Loop",
             "让不同模型预设显式启用 Sub-agent 委派",
             "标准模型和正常推理强度预设",
             "不会凭空创建宿主 API",

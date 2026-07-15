@@ -1,6 +1,8 @@
-# Meta Skills Library
+# Loopower Library
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
+
+**让所有宿主能力兼容的 GPT 模型使用受治理的 Sub-agent Loop。** Loopower 不再等待模型自发决定是否委派，而是将 sub-agent 激活、handoff、循环预算和退出条件转化为经过验证的项目本地合同。
 
 当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `3.1.0`：它是使用 topology-derived professional roles、具备可验证请求规范化、主输出保证、配置绑定证据、原子 Replan 审批、Evidence-Locked DAG Execution Governance 和基于访问模式审阅隔离的 Codex-native Loop Agent Builder。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并在不独占会话路由的前提下治理审批、宿主原生 live sub-agent 激活与后验轨迹验证。
 
@@ -133,11 +135,11 @@ cp skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/yo
 
 ### 让不同模型预设显式启用 Sub-agent 委派
 
-在本项目的本地实测中，`5.6 Sol Ultra` 是受测预设里唯一能够在没有显式委派合同的情况下稳定主动启动 sub-agents 的预设。这反映的是已观察到的宿主路由倾向，并不代表其他模型在能力上天然无法使用 sub-agents。Loopower 不再依赖模型“自发想起委派”：它会探测宿主生命周期能力，根据 LoopSpec 拓扑推导任务专用阵容，持久化每个角色的 prompt，并在审批通过后要求显式激活 live processes。
+在本项目的本地实测中，`5.6 Sol Ultra` 是受测预设里唯一能够在没有显式委派合同的情况下稳定主动启动 sub-agents 的预设。这与 [Codex 当前官方文档](https://developers.openai.com/codex/agent-configuration/subagents)一致：Ultra 可以主动委派，而其他 intelligence levels 可以在收到直接请求或适用的项目/Skill 指令后启动 sub-agents。这是路由方式的区别，并不代表其他模型在能力上天然无法使用 sub-agents。Loopower 不再依赖模型“自发想起委派”：它会探测宿主生命周期能力，根据 LoopSpec 拓扑推导任务专用阵容，持久化每个角色的 prompt，并在审批通过后要求显式激活 live processes。
 
 因此，只要当前 Codex 宿主确实暴露并授权了 `spawn_agent`、`spawn_subagent` 或等效生命周期 API，标准模型和正常推理强度预设也可以进入受治理的 sub-agent loops。本 Skill 不会凭空创建宿主 API、改变模型权益、绕过权限，也不保证不同模型具有完全相同的委派质量。若宿主缺少生命周期能力，验证将 fail closed，而不会把主线程中的角色扮演伪装成 live sub-agent process。
 
-阵容由拓扑决定，而不是固定模板：一个任务可以激活 researcher、data engineer、implementation specialist、security auditor、independent verifier，或其他有明确必要性的专业角色。有限 agent 集合、handoff、循环预算、进展信号、审阅隔离和终止路径均由 LoopSpec 定义，而不是由硬编码的三 Agent 阵容定义。
+阵容由拓扑决定，而不是固定模板：一个任务可以激活 researcher、data engineer、implementation specialist、security auditor、independent verifier，或其他有明确必要性的专业角色。有限 agent 集合、handoff、循环预算、进展信号、审阅隔离和终止路径均由 LoopSpec 定义。
 
 当用户显式给出 `GO`，并且 `.codex-loop/` 已经写入且验证通过后，Codex 不能只把 scaffold 当作纯文本。如果当前 Codex 宿主暴露 `spawn_subagent`、`spawn_agent` 或等效原生 sub-agent lifecycle API，Codex 必须把 `.codex-loop/subagents/` 下已批准的角色激活为 live host processes。
 
