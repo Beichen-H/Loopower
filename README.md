@@ -2,7 +2,7 @@
 
 Portable, contract-first skills for Codex-native agent workflows.
 
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `3.0.0`: a Codex-native Loop Agent Builder with topology-derived professional roles, verified request normalization, budget provenance, Evidence-Locked DAG Execution Governance, access-mode-based reviewer isolation, and versioned multi-cycle progress evidence. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and governs approval, host-native live sub-agent activation, and post-hoc evidence validation without taking exclusive control of the session.
+The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `3.1.0`: a Codex-native Loop Agent Builder with topology-derived professional roles, verified request normalization, primary-output guarantees, configuration-bound evidence, atomic replan approval, Evidence-Locked DAG Execution Governance, and access-mode-based reviewer isolation. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and governs approval, host-native live sub-agent activation, and post-hoc evidence validation without taking exclusive control of the session.
 
 This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
 
@@ -21,6 +21,9 @@ This project does not contain an independent Runtime Engine. Codex is the host e
 - a non-exclusive governance overlay that keeps specialized skills available as host-resolved atomic capabilities;
 - a `required_subagent_reasoning_intensity` marker that records `extended_thought` requirements for complex live sub-agent work;
 - an Evidence-Locked DAG Execution Governance contract that blocks validated sub-agent nodes from being replaced by inline execution.
+- a primary-output binding that prevents `passed` without the declared user-facing deliverable;
+- immutable config-version and LoopSpec-digest bindings across preflight, activation, handoff, completion, and progress evidence;
+- preview-exact replan validation that rejects stale bases or substituted post-approval designs.
 
 It is intentionally small. `.codex-loop/` is configuration, not a database, queue, checkpoint store, or hidden runtime.
 
@@ -242,11 +245,11 @@ A representative generated prompt tree is:
 
 This governance layer is not a universal performance accelerator. For a low-entropy task with a fixed input, one obvious action, and a deterministic check, direct Codex execution and a validated `one_shot` usually produce the same practical result. Activating the full design path adds a small token and latency cost for request normalization, capability snapshotting, schema validation, and provenance recording. Use the simplest sufficient disposition; do not build an agent loop merely because the machinery is available.
 
-v3.0.0 does not claim a universal percentage reduction in tokens, latency, or failures. The break-even point depends on task entropy, loop length, tool cost, declared agent count, and how often the host evaluates the persisted gates. Each additional professional prompt and lifecycle evidence stream adds measurable prompt, validation, and trace-storage overhead.
+v3.1.0 does not claim a universal percentage reduction in tokens, latency, or failures. The break-even point depends on task entropy, loop length, tool cost, declared agent count, and how often the host evaluates the persisted gates. Each additional professional prompt and lifecycle evidence stream adds measurable prompt, validation, and trace-storage overhead.
 
-The value changes when work is long-running, adaptive, permission-sensitive, or distributed across roles. In those cases, v3.0.0 converts an otherwise open-ended uncertainty failure into a deterministic refusal or circuit-break condition: budgets are explicit, stalled progress is measurable, write authority is separated from review, and raw-to-effective request changes are hash-addressed. This does not guarantee task success. It bounds failure and makes the reason for stopping inspectable.
+The value changes when work is long-running, adaptive, permission-sensitive, or distributed across roles. In those cases, v3.1.0 converts an otherwise open-ended uncertainty failure into a deterministic refusal or circuit-break condition: budgets are explicit, stalled progress is measurable, write authority is separated from review, the primary output is explicit, and request/config/run evidence is hash-addressed. This does not guarantee task success. It bounds failure and makes the reason for stopping inspectable.
 
-| Dimension | Ungoverned (`bare`) host execution | v3.0.0 governed execution |
+| Dimension | Ungoverned (`bare`) host execution | v3.1.0 governed execution |
 |---|---|---|
 | Token behavior | Minimal setup cost for simple tasks, but no contract-level ceiling prevents repeated replanning or stalled-loop token growth. | Adds front-loaded normalization, per-agent prompt, and evidence-validation tokens; agent loops carry explicit runtime, iteration, token, and no-progress limits. Strict token enforcement still requires an authoritative host or controller-owned counter. |
 | Circuit breaking | Depends on the model or user noticing that work is stalled. Exit behavior may remain implicit. | Deterministic progress facts and four hard limits cause validation to fail on limit breaches or repeated no-progress evidence. Enforcement is post-hoc unless the Codex host runs the validator at each required gate and stops on failure. |
@@ -393,6 +396,17 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 This repository is released under the [MIT License](LICENSE).
 
 ## Release notes
+
+### v3.1.0 (2026-07-15)
+
+- Added mandatory LoopSpec-level `output_binding`; `passed` now requires the declared non-controller primary output to be non-empty.
+- Added passed-path dominance validation so every mandatory evaluator lies on every route to a `passed` terminal.
+- Upgraded Agent Manifest and lifecycle/progress evidence contracts to `3.0.0`, binding each run record to `config_version` and the canonical `loop_spec_digest`.
+- Added GO capability-preflight evidence and fail-closed capability-drift checks immediately before live activation.
+- Added `replan_proposal.schema.json` and `validate_replan_proposal.py` for exact-preview approval, stale-base rejection, and post-approval substitution prevention.
+- Preserved the zero-independent-Runtime architecture: all additions are static contracts and post-hoc validators.
+
+Existing v3.0 scaffolds must be regenerated or migrated as a unit. Do not mix v3.0 lifecycle evidence with a v3.1 Manifest; digest and config-version checks intentionally reject mixed generations.
 
 ### v3.0.0 (2026-07-13)
 

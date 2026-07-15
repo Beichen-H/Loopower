@@ -22,6 +22,7 @@
     "policies",
     "delegation",
     "artifacts",
+    "output_binding",
     "threshold_register",
     "validation"
   ],
@@ -285,6 +286,18 @@
       "additionalProperties": true
     },
     "artifacts": { "type": "object" },
+    "output_binding": {
+      "type": "object",
+      "required": ["producer_node", "state_field", "format", "language", "non_empty_before_passed"],
+      "properties": {
+        "producer_node": { "type": "string", "minLength": 1 },
+        "state_field": { "type": "string", "minLength": 1 },
+        "format": { "type": "string", "minLength": 1 },
+        "language": { "type": "string", "minLength": 1 },
+        "non_empty_before_passed": { "const": true }
+      },
+      "additionalProperties": false
+    },
     "threshold_register": {
       "type": "array",
       "items": { "$ref": "#/$defs/threshold" }

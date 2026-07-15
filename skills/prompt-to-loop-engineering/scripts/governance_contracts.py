@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections.abc import Callable
 from typing import Any
@@ -30,6 +32,121 @@ EDGE_SELECTION_POLICY = {
     "match_policy": "first_match",
     "equal_priority": "require_explicit_tie_breaker",
 }
+SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def canonical_json_digest(value: Any) -> str:
+    """Return a stable digest for one JSON-compatible contract value."""
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def validate_output_binding(loop_spec: dict[str, Any], require: Require) -> None:
+    """Require a non-controller primary deliverable before a passed terminal."""
+    binding = loop_spec.get("output_binding")
+    require(isinstance(binding, dict), "loop_spec.output_binding must be present")
+    if not isinstance(binding, dict):
+        return
+    required = {
+        "producer_node", "state_field", "format", "language",
+        "non_empty_before_passed",
+    }
+    require(set(binding) == required, f"output_binding must define exactly {sorted(required)}")
+    producer = binding.get("producer_node")
+    state_field = binding.get("state_field")
+    require(isinstance(producer, str) and producer, "output_binding.producer_node is required")
+    require(isinstance(state_field, str) and state_field, "output_binding.state_field is required")
+    require(isinstance(binding.get("format"), str) and binding["format"], "output_binding.format is required")
+    require(isinstance(binding.get("language"), str) and binding["language"], "output_binding.language is required")
+    require(binding.get("non_empty_before_passed") is True, "output_binding.non_empty_before_passed must be true")
+
+    state = loop_spec.get("state")
+    require(isinstance(state, dict), "loop_spec.state must be present for output binding")
+    schema = state.get("schema") if isinstance(state, dict) else None
+    controller_fields = state.get("controller_owned_fields") if isinstance(state, dict) else None
+    require(isinstance(schema, dict), "loop_spec.state.schema must be an object")
+    require(isinstance(controller_fields, list), "loop_spec.state.controller_owned_fields must be an array")
+    if isinstance(schema, dict) and isinstance(state_field, str):
+        require(state_field in schema, f"output_binding.state_field {state_field!r} is undefined")
+    if isinstance(controller_fields, list):
+        require(state_field not in controller_fields, "output_binding cannot reference controller-owned state")
+
+    nodes = loop_spec.get("control_flow", {}).get("nodes", [])
+    node_map = {
+        item.get("id"): item for item in nodes
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    require(producer in node_map, f"output_binding producer node {producer!r} is undefined")
+    if producer in node_map:
+        write_scope = node_map[producer].get("state_write_scope")
+        if write_scope is not None:
+            require(isinstance(write_scope, list), f"producer node {producer!r} state_write_scope must be an array")
+            if isinstance(write_scope, list):
+                require(state_field in write_scope, f"producer node {producer!r} does not write output field {state_field!r}")
+    passed = loop_spec.get("control_flow", {}).get("terminal_nodes", {}).get("passed")
+    require(isinstance(passed, list) and bool(passed), "output_binding requires at least one passed terminal")
+
+
+def validate_passed_path_evaluators(
+    loop_spec: dict[str, Any],
+    require: Require,
+    *,
+    mandatory_criterion_ids: set[str] | None = None,
+) -> None:
+    """Require every mandatory evaluator to dominate all entry-to-passed paths."""
+    control_flow = loop_spec.get("control_flow")
+    evaluation = loop_spec.get("evaluation")
+    require(isinstance(control_flow, dict), "loop_spec.control_flow must be present")
+    require(isinstance(evaluation, dict), "loop_spec.evaluation must be present")
+    if not isinstance(control_flow, dict) or not isinstance(evaluation, dict):
+        return
+    nodes = control_flow.get("nodes")
+    edges = control_flow.get("edges")
+    bindings = evaluation.get("criteria_bindings")
+    require(isinstance(nodes, list), "control_flow.nodes must be an array")
+    require(isinstance(edges, list), "control_flow.edges must be an array")
+    require(isinstance(bindings, list), "evaluation.criteria_bindings must be an array")
+    if not isinstance(nodes, list) or not isinstance(edges, list) or not isinstance(bindings, list):
+        return
+    node_ids = {item.get("id") for item in nodes if isinstance(item, dict)}
+    entry = control_flow.get("entry_node")
+    passed = set(control_flow.get("terminal_nodes", {}).get("passed", []))
+    adjacency: dict[str, list[str]] = {}
+    for edge in edges:
+        if isinstance(edge, dict):
+            adjacency.setdefault(edge.get("from"), []).append(edge.get("to"))
+    for index, binding in enumerate(bindings):
+        require(isinstance(binding, dict), f"evaluation.criteria_bindings[{index}] must be an object")
+        if not isinstance(binding, dict):
+            continue
+        criterion_id = binding.get("criterion_id")
+        if mandatory_criterion_ids is not None and criterion_id not in mandatory_criterion_ids:
+            continue
+        evaluator = binding.get("evaluator_node")
+        require(evaluator in node_ids, f"criterion {criterion_id!r} evaluator_node is undefined")
+        if evaluator not in node_ids:
+            continue
+        if evaluator == entry:
+            continue
+        seen = {entry}
+        pending = [entry]
+        bypassed: set[str] = set()
+        while pending:
+            current = pending.pop()
+            for target in adjacency.get(current, []):
+                if target == evaluator or target in seen:
+                    continue
+                if target in passed:
+                    bypassed.add(target)
+                    continue
+                seen.add(target)
+                pending.append(target)
+        require(
+            not bypassed,
+            f"mandatory criterion {criterion_id!r} evaluator {evaluator!r} can be bypassed on passed path(s) to {sorted(bypassed)}",
+        )
 
 
 def validate_safe_agent_id(agent_id: str, require: Require, path: str) -> None:

@@ -1,9 +1,9 @@
 {
-  "spec_id": "prompt-to-loop-engineering@3.0.0",
+  "spec_id": "prompt-to-loop-engineering@3.1.0",
   "version": 1,
-  "skill_version": "3.0.0",
+  "skill_version": "3.1.0",
   "knowledge_contract": "loop-engineering-kb-v4.0.2",
-  "created_from_request": "dynamic-subagent-topology-v3.0.0",
+  "created_from_request": "metaagent-v1-hardening-v3.1.0",
   "task_contract_ref": "prompt-to-loop-engineering-build@1",
   "contract_registry": {
     "Loop_design_request": "SKILL.md#input-contract-loop_design_request",
@@ -693,6 +693,13 @@
     ],
     "retention_policy": "external controller policy"
   },
+  "output_binding": {
+    "producer_node": "terminal_export",
+    "state_field": "loop_design_result",
+    "format": "application/json",
+    "language": "request-bound",
+    "non_empty_before_passed": true
+  },
   "threshold_register": [
     {
       "id": "model_schema_retry_limit",
@@ -700,7 +707,7 @@
       "unit": "attempts",
       "source": "asset_policy",
       "rationale": "Allow one bounded correction for malformed structured output, then export a non-executable result.",
-      "calibration_scope": "prompt-to-loop-engineering v3.0.0",
+      "calibration_scope": "prompt-to-loop-engineering v3.1.0",
       "review_trigger": "measured malformed-output rate changes materially"
     },
     {
@@ -737,7 +744,9 @@
       "state_write_scope",
       "status_mapping",
       "threshold_sources",
-      "reference_resolution"
+      "reference_resolution",
+      "output_binding",
+      "passed_path_dominance"
     ]
   }
 }

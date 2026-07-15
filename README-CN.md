@@ -2,7 +2,7 @@
 
 面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
 
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `3.0.0`：它是使用 topology-derived professional roles、具备可验证请求规范化、预算来源追踪、Evidence-Locked DAG Execution Governance、基于访问模式的审阅者隔离以及版本化多循环进展证据的 Codex-native Loop Agent Builder。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并在不独占会话路由的前提下治理审批、宿主原生 live sub-agent 激活与后验轨迹验证。
+当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `3.1.0`：它是使用 topology-derived professional roles、具备可验证请求规范化、主输出保证、配置绑定证据、原子 Replan 审批、Evidence-Locked DAG Execution Governance 和基于访问模式审阅隔离的 Codex-native Loop Agent Builder。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并在不独占会话路由的前提下治理审批、宿主原生 live sub-agent 激活与后验轨迹验证。
 
 本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
 
@@ -242,11 +242,11 @@ python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution
 
 这层治理不是通用性能加速器。对于输入固定、动作唯一且具有确定性校验的低熵简单任务，Codex 直接执行与经过验证的 `one_shot` 通常不会产生实质结果差异。启用完整设计链会为请求规范化、能力快照、Schema 校验和来源记录带来轻量的 Token 与延迟开销。因此应始终选择足够完成任务的最简单 disposition，不能因为具备循环能力就强行构造 agent loop。
 
-v3.0.0 不宣称可以普遍降低某个固定百分比的 Token、延迟或失败率。实际盈亏平衡点取决于任务熵、循环长度、工具成本、声明的 agent 数量，以及宿主执行持久化门禁的频率。每增加一个专业 prompt 与生命周期证据流，都会增加可测量的 prompt、验证与追踪存储开销。
+v3.1.0 不宣称可以普遍降低某个固定百分比的 Token、延迟或失败率。实际盈亏平衡点取决于任务熵、循环长度、工具成本、声明的 agent 数量，以及宿主执行持久化门禁的频率。每增加一个专业 prompt 与生命周期证据流，都会增加可测量的 prompt、验证与追踪存储开销。
 
-当任务具有长周期、自适应、权限敏感或多角色协作特征时，这套架构的价值才会显现。v3.0.0 将原本可能开放式扩散的“不确定性灾难”转换为确定性的拒绝或熔断条件：预算显式化、停滞进展可测量、写入权与验收权相互隔离、原始请求到有效请求的转换可通过哈希追溯。它不保证用户任务必然成功；它限制失败扩散，并让停止原因可以被检查和复现。
+当任务具有长周期、自适应、权限敏感或多角色协作特征时，这套架构的价值才会显现。v3.1.0 将原本可能开放式扩散的“不确定性灾难”转换为确定性的拒绝或熔断条件：预算显式化、停滞进展可测量、写入权与验收权相互隔离、主输出显式化，并把请求、配置和运行证据通过哈希绑定。它不保证用户任务必然成功；它限制失败扩散，并让停止原因可以被检查和复现。
 
-| 维度 | 裸奔（无治理）宿主执行 | v3.0.0 治理模式 |
+| 维度 | 裸奔（无治理）宿主执行 | v3.1.0 治理模式 |
 |---|---|---|
 | Token 行为 | 简单任务的启动成本最低，但缺少合同级上限，无法阻止重复规划或停滞循环持续消耗 Token。 | 增加前置规范化、每个 agent prompt 与证据验证开销；agent loop 显式声明最大运行时长、迭代次数、Token 预算和无进展轮数。严格 Token 熔断仍依赖宿主 API 或控制器持有的权威计数器。 |
 | 熔断能力 | 依赖模型或用户自行察觉停滞，退出行为可能只存在于自然语言上下文中。 | 确定性进展事实与四项刚性上限会让越界或连续无进展证据触发 validator 失败；除非 Codex 宿主在每个规定门禁运行 validator 并在失败时停止，否则该约束仍属于后验裁判。 |
@@ -393,6 +393,17 @@ python -B skills/prompt-to-loop-engineering/scripts/validate_design_result.py \
 本仓库采用 [MIT License](LICENSE) 发布。
 
 ## Release notes
+
+### v3.1.0 (2026-07-15)
+
+- 新增强制 LoopSpec `output_binding`；进入 `passed` 前，声明的非控制器主输出必须非空。
+- 新增成功路径支配检查：每个 mandatory evaluator 必须位于所有通往 `passed` 终态的路径上。
+- 将 Agent Manifest 与 lifecycle/progress evidence 合同升级为 `3.0.0`，用 `config_version` 和规范化 `loop_spec_digest` 绑定每条运行证据。
+- 新增 GO capability-preflight 证据，在 live activation 前对能力漂移执行 fail-closed 检查。
+- 新增 `replan_proposal.schema.json` 和 `validate_replan_proposal.py`，拒绝过期基础版本、未精确批准的预览以及审批后的配置替换。
+- 保持零独立 Runtime：新增内容全部是静态合同与后验验证器。
+
+现有 v3.0 scaffold 必须整体重新生成或整体迁移。不要把 v3.0 lifecycle evidence 与 v3.1 Manifest 混用；digest 与 config-version 校验会主动拒绝跨代混合。
 
 ### v3.0.0 (2026-07-13)
 

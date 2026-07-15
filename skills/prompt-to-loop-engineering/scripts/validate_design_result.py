@@ -15,7 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from normalize_design_request import normalize_design_request
-from governance_contracts import validate_core_loop_governance, validate_safe_agent_id
+from governance_contracts import (
+    validate_core_loop_governance,
+    validate_output_binding,
+    validate_passed_path_evaluators,
+    validate_safe_agent_id,
+)
 
 
 DISPOSITION_TO_BUILD_STATUS = {
@@ -128,6 +133,8 @@ REQUIRED_STATIC_CHECKS = {
     "status_mapping",
     "threshold_sources",
     "reference_resolution",
+    "output_binding",
+    "passed_path_dominance",
 }
 SUBAGENT_DISCOVERY_TOKENS = (
     "tool_search",
@@ -513,7 +520,7 @@ def _validate_loop_spec(
         "spec_id", "version", "created_from_request", "task_contract_ref", "architecture",
         "runtime_binding", "state", "context", "control_flow", "transition_policy", "tools",
         "evaluation", "termination", "termination_control", "policy_registry", "policies",
-        "delegation", "artifacts", "threshold_register", "validation",
+        "delegation", "artifacts", "output_binding", "threshold_register", "validation",
     }
     _require_keys(spec, required, "loop_spec")
     _non_empty_string(spec["spec_id"], "loop_spec.spec_id")
@@ -589,6 +596,10 @@ def _validate_loop_spec(
     )
     evaluation = _object(spec["evaluation"], "loop_spec.evaluation")
     _validate_evaluation(evaluation, criterion_ids, mandatory_ids, flow_info, agent_registry)
+    validate_output_binding(spec, _require)
+    validate_passed_path_evaluators(
+        spec, _require, mandatory_criterion_ids=mandatory_ids
+    )
     _validate_transition_policy(_object(spec["transition_policy"], "loop_spec.transition_policy"), expected_mode, flow_info)
     _validate_termination_control(
         _object(spec["termination_control"], "loop_spec.termination_control")

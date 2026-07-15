@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "evidence_type": "go_capability_preflight",
+  "config_version": 1,
+  "loop_spec_digest": "sha256:f298c7d53ab2ae728b1fdea16eb9b80233a4aad005c17d9cfb05f995b520254e",
+  "checked_at": "2026-07-13T20:00:00-05:00",
+  "observed_capabilities": {
+    "available_tools": ["read_files", "edit_files", "run_tests"],
+    "tool_access_modes": {"read_files": "read_only", "edit_files": "workspace_write", "run_tests": "read_only"},
+    "durable_state": false,
+    "checkpoint_resume": false,
+    "sandbox": true,
+    "human_interrupt": true,
+    "parallel_execution": false,
+    "subagents": true,
+    "required_subagent_reasoning_intensity": "extended_thought"
+  },
+  "lifecycle_discovery": {
+    "keywords": ["spawn_agent", "spawn_subagent", "subagent", "multi_agent"],
+    "result": "host_native_lifecycle_tool_found",
+    "host_api": "multi_agent_v1.spawn_agent"
+  },
+  "capability_drift": [],
+  "status": "passed"
+}

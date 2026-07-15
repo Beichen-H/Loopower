@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meta-skills-library.dev/schemas/replan_proposal.schema.json",
+  "title": "Atomic LoopSpec Replan Proposal",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "proposal_id",
+    "base_config_version",
+    "base_loop_spec_digest",
+    "proposed_loop_spec_digest",
+    "approval"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "proposal_id": { "type": "string", "pattern": "^proposal:[0-9a-f]{64}$" },
+    "base_config_version": { "type": "integer", "minimum": 1 },
+    "base_loop_spec_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "proposed_loop_spec_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "approval": {
+      "type": "object",
+      "required": ["status", "approved_proposal_id", "approved_digest", "explicit_user_go"],
+      "properties": {
+        "status": { "const": "approved" },
+        "approved_proposal_id": { "type": "string", "pattern": "^proposal:[0-9a-f]{64}$" },
+        "approved_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "explicit_user_go": { "const": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

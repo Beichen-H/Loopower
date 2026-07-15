@@ -58,7 +58,8 @@
       "test_count": "integer",
       "artifact_hash": "string",
       "new_evidence_count": "integer",
-      "budget_remaining": "integer"
+      "budget_remaining": "integer",
+      "final_answer": "string"
     },
     "initial_state": {
       "current_stage": "requirements-analysis",
@@ -69,7 +70,8 @@
       "test_count": 0,
       "artifact_hash": "",
       "new_evidence_count": 0,
-      "budget_remaining": 5
+      "budget_remaining": 5,
+      "final_answer": ""
     },
     "persistence": "status_file",
     "state_version": 1,
@@ -140,6 +142,18 @@
       {"id": "test-verifier", "display_name": "Test Verifier", "specialization": "test-evidence-verification", "governance_role": "verifier", "rationale": "Independent read-only test verification prevents the implementer from evaluating its own work.", "prompt_ref": ".codex-loop/subagents/test-verifier.md", "activation_policy": "on_demand", "activation_nodes": ["test-verification"], "allowed_tools": ["read_files", "run_tests"]},
       {"id": "security-auditor", "display_name": "Security Auditor", "specialization": "security-review", "governance_role": "reviewer", "rationale": "An independent read-only reviewer checks the verified change for security regressions.", "prompt_ref": ".codex-loop/subagents/security-auditor.md", "activation_policy": "on_demand", "activation_nodes": ["security-review"], "allowed_tools": ["read_files"]}
     ]
+  },
+  "evaluation": {
+    "criteria_bindings": [
+      {"criterion_id": "AC-1", "evaluator_ref": "independent_test_verification", "evaluator_node": "test-verification", "subject_nodes": ["feature-implementation"]}
+    ]
+  },
+  "output_binding": {
+    "producer_node": "feature-implementation",
+    "state_field": "final_answer",
+    "format": "markdown",
+    "language": "en",
+    "non_empty_before_passed": true
   },
   "threshold_register": [
     {"id": "max_runtime_seconds", "value": 900, "unit": "seconds", "source": "default_policy:codex-native-safe-v1", "rationale": "Hard wall-clock stop for Codex-native scaffold execution.", "calibration_scope": "bounded_feature_delivery_cycle", "review_trigger": "runtime budget changes"},

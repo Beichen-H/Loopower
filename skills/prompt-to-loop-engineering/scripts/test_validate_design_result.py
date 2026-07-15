@@ -178,6 +178,9 @@ def four_agent_payload() -> dict:
         },
     ])
     edges = spec["control_flow"]["edges"]
+    for edge in edges:
+        if edge["from"] == "choose_next_action" and edge["to"] == "export_passed":
+            edge["to"] = "quality_review"
     edges.insert(3, {
         "from": "choose_next_action",
         "to": "remediation_plan",
@@ -193,9 +196,15 @@ def four_agent_payload() -> dict:
         },
         {
             "from": "quality_review",
+            "to": "export_passed",
+            "condition": {"all": [{"fact": "state.acceptance_passed", "operator": "eq", "value": True}]},
+            "priority": 10,
+        },
+        {
+            "from": "quality_review",
             "to": "observe_evidence",
             "condition": {"all": [{"fact": "state.acceptance_passed", "operator": "eq", "value": False}]},
-            "priority": 10,
+            "priority": 20,
         },
     ])
     spec["control_flow"]["cycles"][0]["node_ids"].extend(
@@ -212,6 +221,29 @@ def four_agent_payload() -> dict:
 
 
 class DesignResultValidationTests(unittest.TestCase):
+    def test_rejects_missing_primary_output_binding(self) -> None:
+        payload = load_example("workflow.json")
+        del payload["loop_spec"]["output_binding"]
+        with self.assertRaisesRegex(DesignValidationError, "output_binding"):
+            validate_design_result(payload, load_request("workflow.json"))
+
+    def test_rejects_controller_owned_primary_output(self) -> None:
+        payload = load_example("workflow.json")
+        payload["loop_spec"]["output_binding"]["state_field"] = "input_valid"
+        with self.assertRaisesRegex(DesignValidationError, "controller-owned"):
+            validate_design_result(payload, load_request("workflow.json"))
+
+    def test_rejects_mandatory_evaluator_bypass_to_passed(self) -> None:
+        payload = four_agent_payload()
+        payload["loop_spec"]["control_flow"]["edges"].insert(1, {
+            "from": "choose_next_action",
+            "to": "export_passed",
+            "condition": {"all": [{"fact": "state.acceptance_passed", "operator": "eq", "value": True}]},
+            "priority": 5,
+        })
+        with self.assertRaisesRegex(DesignValidationError, "can be bypassed"):
+            validate_design_result(payload, load_request("agent_loop.json"))
+
     def test_accepts_arbitrary_professional_ids_and_more_than_three_agents(self) -> None:
         payload = four_agent_payload()
 

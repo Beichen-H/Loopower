@@ -87,8 +87,9 @@
     "policies": {"recovery_policy_ref": null, "checkpoint_policy_ref": null, "budget_policy_ref": null, "scope_policy_ref": "config_only", "observability_policy_ref": "config_trace"},
     "delegation": {"enabled": false, "worker_profiles": [], "handoff_contract_ref": null, "merge_policy": null, "agent_registry": []},
     "artifacts": {"required_by_acceptance_or_recovery": ["formatted configuration or validation errors"], "retention_policy": "response only"},
+    "output_binding": {"producer_node": "validate_config", "state_field": "formatted_config", "format": "application/json", "language": "en", "non_empty_before_passed": true},
     "threshold_register": [],
-    "validation": {"schema_version": "loop-spec-v4", "required_checks": ["acceptance_bindings", "graph_reachability", "edge_condition_observability", "edge_priority_determinism", "state_initialization", "cycle_controls", "tool_capability_binding", "status_mapping", "threshold_sources", "reference_resolution"]}
+    "validation": {"schema_version": "loop-spec-v4", "required_checks": ["acceptance_bindings", "graph_reachability", "edge_condition_observability", "edge_priority_determinism", "state_initialization", "cycle_controls", "tool_capability_binding", "status_mapping", "threshold_sources", "reference_resolution", "output_binding", "passed_path_dominance"]}
   },
   "one_shot_validation_plan": null,
   "assumptions": [],

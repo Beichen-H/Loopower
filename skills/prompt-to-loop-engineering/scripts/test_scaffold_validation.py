@@ -11,6 +11,8 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
+from governance_contracts import canonical_json_digest
+
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR = SKILL_ROOT / "scripts" / "validate_codex_loop_scaffold.py"
@@ -18,6 +20,60 @@ EXAMPLE = SKILL_ROOT / "examples" / "codex-loop"
 
 
 class CodexLoopScaffoldValidationTests(unittest.TestCase):
+    def test_rejects_stale_loop_spec_digest(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["output_binding"]["language"] = "fr"
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "loop_spec_digest does not match")
+
+    def test_rejects_go_preflight_capability_drift(self) -> None:
+        with self.scaffold() as work:
+            preflight = self.load(work, "evidence/preflight/go-preflight.json")
+            preflight["observed_capabilities"]["sandbox"] = False
+            self.save(work, "evidence/preflight/go-preflight.json", preflight)
+            self.assert_invalid(work, "observed capabilities")
+
+    def test_rejects_go_preflight_without_discovered_lifecycle_api(self) -> None:
+        with self.scaffold() as work:
+            preflight = self.load(work, "evidence/preflight/go-preflight.json")
+            preflight["lifecycle_discovery"]["host_api"] = None
+            self.save(work, "evidence/preflight/go-preflight.json", preflight)
+            self.assert_invalid(work, "non-empty discovered host lifecycle API")
+
+    def test_rejects_go_preflight_with_invalid_timestamp(self) -> None:
+        with self.scaffold() as work:
+            preflight = self.load(work, "evidence/preflight/go-preflight.json")
+            preflight["checked_at"] = "not-a-timestamp"
+            self.save(work, "evidence/preflight/go-preflight.json", preflight)
+            self.assert_invalid(work, "valid ISO 8601 timestamp")
+
+    def test_rejects_go_preflight_without_timestamp_offset(self) -> None:
+        with self.scaffold() as work:
+            preflight = self.load(work, "evidence/preflight/go-preflight.json")
+            preflight["checked_at"] = "2026-07-15T12:00:00"
+            self.save(work, "evidence/preflight/go-preflight.json", preflight)
+            self.assert_invalid(work, "include time and UTC offset")
+
+    def test_rejects_primary_output_bound_to_controller_state(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["output_binding"]["state_field"] = "validation_passed"
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "controller-owned")
+
+    def test_rejects_passed_path_that_bypasses_mandatory_evaluator(self) -> None:
+        with self.scaffold() as work:
+            spec = self.load(work, "loop_spec.json")
+            spec["control_flow"]["edges"].insert(0, {
+                "from": "requirements-analysis",
+                "to": "terminal-export",
+                "condition": {"all": [{"fact": "state.plan_ready", "operator": "eq", "value": True}]},
+                "priority": 5,
+            })
+            self.save(work, "loop_spec.json", spec)
+            self.assert_invalid(work, "can be bypassed")
+
     def run_validator(self, path: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, "-B", str(VALIDATOR), str(path)],
@@ -45,6 +101,15 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
         result = self.run_validator(work)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(message, result.stdout + result.stderr)
+
+    def refresh_configuration_binding(self, work: Path, spec: dict) -> None:
+        digest = canonical_json_digest(spec)
+        manifest = self.load(work, "agent_manifest.json")
+        manifest["configuration_binding"]["loop_spec_digest"] = digest
+        self.save(work, "agent_manifest.json", manifest)
+        preflight = self.load(work, "evidence/preflight/go-preflight.json")
+        preflight["loop_spec_digest"] = digest
+        self.save(work, "evidence/preflight/go-preflight.json", preflight)
 
     def make_workflow_scaffold(self, work: Path) -> dict:
         spec = self.load(work, "loop_spec.json")
@@ -74,6 +139,7 @@ class CodexLoopScaffoldValidationTests(unittest.TestCase):
             if node_id != "terminal-stopped"
         ]
         self.save(work, "loop_spec.json", spec)
+        self.refresh_configuration_binding(work, spec)
         return spec
 
     def test_persisted_workflow_does_not_inherit_agent_loop_only_hard_stops(self) -> None:

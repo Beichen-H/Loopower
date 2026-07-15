@@ -123,6 +123,7 @@
       {"id": "diagnostic-strategist", "display_name": "Diagnostic Strategist", "specialization": "evidence-driven-diagnostic-planning", "governance_role": "planner", "rationale": "Adaptive diagnostic proposals require a task-specific planning specialist.", "prompt_ref": ".codex-loop/subagents/diagnostic-strategist.md", "activation_policy": "on_demand", "activation_nodes": ["choose_next_action"], "allowed_tools": []}
     ]},
     "artifacts": {"required_by_acceptance_or_recovery": ["observations", "diagnosis", "acceptance report"], "retention_policy": "external controller policy"},
+    "output_binding": {"producer_node": "choose_next_action", "state_field": "diagnosis", "format": "application/json", "language": "en", "non_empty_before_passed": true},
     "threshold_register": [
       {"id": "observation_budget", "value": 4, "unit": "observations", "source": "request_budget_envelope", "rationale": "Bind the example to the request's observation limit.", "calibration_scope": "this request", "review_trigger": "request budget changes"},
       {"id": "model_call_budget", "value": 4, "unit": "calls", "source": "request_budget_envelope", "rationale": "Permit at most one model update per observation.", "calibration_scope": "this request", "review_trigger": "request budget changes"},
@@ -136,7 +137,7 @@
       {"id": "max_token_budget", "value": 120000, "unit": "tokens", "source": "request_budget_envelope", "rationale": "Hard token budget stop for the loop.", "calibration_scope": "diagnosis cycle", "review_trigger": "token budget changes"},
       {"id": "max_no_progress_loops", "value": 1, "unit": "loops", "source": "request_budget_envelope", "rationale": "Stop when consecutive evidence fingerprints show no progress.", "calibration_scope": "diagnosis cycle", "review_trigger": "stagnation tolerance changes"}
     ],
-    "validation": {"schema_version": "loop-spec-v4", "required_checks": ["acceptance_bindings", "graph_reachability", "edge_condition_observability", "edge_priority_determinism", "state_initialization", "cycle_controls", "tool_capability_binding", "status_mapping", "threshold_sources", "reference_resolution"]}
+    "validation": {"schema_version": "loop-spec-v4", "required_checks": ["acceptance_bindings", "graph_reachability", "edge_condition_observability", "edge_priority_determinism", "state_initialization", "cycle_controls", "tool_capability_binding", "status_mapping", "threshold_sources", "reference_resolution", "output_binding", "passed_path_dominance"]}
   },
   "one_shot_validation_plan": null,
   "assumptions": [],

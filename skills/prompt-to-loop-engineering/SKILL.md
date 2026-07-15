@@ -5,7 +5,7 @@ description: Use when a natural-language task must be converted into a role-neut
 
 # Prompt to Loop Engineering
 
-**Skill version:** `3.0.0`
+**Skill version:** `3.1.0`
 **Normative contract:** Loop Engineering KB `v4.0.2`
 **Self-design graph:** [`loop_spec.json`](loop_spec.json)
 
@@ -64,13 +64,25 @@ The effective `Loop_design_request` remains strict: all four limits and the comp
 
 Interactive prompting MAY be offered by an outer CLI only when a real TTY is present. It MUST remain opt-in, MUST NOT block Codex, CI, or headless use, and MUST feed its selected values through the same normalizer and validator path.
 
-Post-GO progress evidence MUST conform to `schemas/progress_evidence.schema.json` version `2.0.0`. It MUST record `run_id`, `cycle_id`, global `iteration`, `cycle_iteration`, authoritative measurement provenance, `elapsed_runtime_seconds`, and `cumulative_token_count` in addition to deterministic progress fingerprints. `validate_loop_progress_evidence.py` MUST group evidence by run and cycle and fail closed when a sequence is incomplete, a cycle is undeclared, an observation is missing or non-monotonic, or any persisted hard limit is exceeded. This is post-hoc evidence adjudication, not an independent Runtime Engine.
+Post-GO progress evidence MUST conform to `schemas/progress_evidence.schema.json` version `3.0.0`. It MUST record `config_version`, `loop_spec_digest`, `run_id`, `cycle_id`, global `iteration`, `cycle_iteration`, authoritative measurement provenance, `elapsed_runtime_seconds`, and `cumulative_token_count` in addition to deterministic progress fingerprints. `validate_loop_progress_evidence.py` MUST group evidence by run and cycle and fail closed when a sequence is incomplete, a cycle is undeclared, an observation is missing or non-monotonic, the configuration binding differs, or any persisted hard limit is exceeded. This is post-hoc evidence adjudication, not an independent Runtime Engine.
 
 `token_count_quality=authoritative` is valid only when the active host API supplies the count or the Codex host maintains a controller-owned counter. The static validator verifies structure, continuity, and limits; it cannot independently prove that a fabricated measurement is truthful. If neither measurement source exists, record the execution as blocked instead of inventing a count or claiming strict token enforcement.
 
 Tool contracts MUST declare `access_mode` as `read_only`, `workspace_write`, or `external_write`. Reviewer and verifier nodes may bind only tools whose registered access mode is `read_only`; tool-name blacklists are insufficient.
 
 Design-only LoopSpecs MAY omit `execution_governance`. Persisted GO-phase `.codex-loop/loop_spec.json` MUST include it and pass `validate_codex_loop_scaffold.py` before execution.
+
+## v3.1.0 — Output and Configuration Integrity
+
+Every `workflow` or `agent_loop` LoopSpec MUST declare one `output_binding` containing `producer_node`, `state_field`, `format`, `language`, and `non_empty_before_passed=true`. The field MUST exist in `state.schema`, MUST NOT be controller-owned, and MUST be writable by the declared producer when a write scope is present. A passed terminal is invalid when the bound primary output is empty; an unrelated artifact cannot substitute for it.
+
+Every mandatory acceptance binding MUST declare an `evaluator_node` that dominates every path from the entry node to every `passed` terminal. A graph that can reach `passed` while bypassing that evaluator MUST fail static validation even when the evaluator exists elsewhere in the graph.
+
+Persisted scaffolds use Agent Manifest schema `3.0.0`. `configuration_binding` MUST record a positive `config_version`, the canonical SHA-256 digest of `loop_spec.json`, `approval_source=explicit_user_go`, and `.codex-loop/evidence/preflight/go-preflight.json`. Every activation, handoff, completion, and progress record MUST carry the same config version and LoopSpec digest. Evidence from another configuration or a mutated LoopSpec is invalid.
+
+Immediately before the first live activation, Codex MUST rediscover the active host lifecycle API and tool/capability surface, write GO capability-preflight evidence conforming to `schemas/go_capability_preflight.schema.json`, and compare it exactly with the approved capability snapshot. Any drift MUST pause activation and require scaffold amendment, validation, and fresh approval.
+
+Replanning MUST be preview-exact. The proposed LoopSpec MUST pass the ordinary design and scaffold validation gates before it is presented for approval. Validate an approved proposal with `scripts/validate_replan_proposal.py`; its base version and base digest MUST match the current scaffold, and its approved proposal id/digest MUST match the proposed LoopSpec byte-independently through canonical JSON hashing. Confirmation MUST persist exactly the approved proposal and MUST NOT call the model again or silently substitute another design.
 
 ## Purpose and boundary
 
@@ -450,6 +462,8 @@ Machine-readable schemas:
 - [`schemas/loop_design_result.schema.json`](schemas/loop_design_result.schema.json)
 - [`schemas/loop_spec.schema.json`](schemas/loop_spec.schema.json)
 - [`schemas/agent_manifest.schema.json`](schemas/agent_manifest.schema.json)
+- [`schemas/go_capability_preflight.schema.json`](schemas/go_capability_preflight.schema.json)
+- [`schemas/replan_proposal.schema.json`](schemas/replan_proposal.schema.json)
 
 ## Codex-native Agent Config Scaffold
 
@@ -468,7 +482,8 @@ Required layout:
 ├── evidence/
 │   ├── activation/
 │   ├── handoff/
-│   └── completion/
+│   ├── completion/
+│   └── preflight/
 └── .status
 ```
 
@@ -478,7 +493,7 @@ Scaffold rules:
 - `agent_manifest.json` mirrors the approved professional registry and binds the main Codex agent to the LoopSpec, guardrails, tool bindings, knowledge bindings, prompt paths, and resume policy.
 - `guardrails.json` stores forbidden commands, write boundaries, approval-required actions, and stop conditions.
 - `subagents/*.md` stores compact role prompts for Codex to read when a loop node requires that specialization.
-- `evidence/*/*.json` stores lightweight post-hoc lifecycle evidence for activation, handoff, and completion when GO-phase DAG execution has begun.
+- `evidence/*/*.json` stores configuration-bound GO preflight, activation, handoff, completion, and progress evidence.
 - `.status` is optional and must contain only one current stage or node id. Do not create `state.json`, a database, queue, checkpoint store, or hidden Runtime Engine inside the Skill or scaffold.
 
 Codex is the host executor: on continuation, it MUST read `.codex-loop/agent_manifest.json`, `.codex-loop/loop_spec.json`, `.codex-loop/guardrails.json`, the relevant sub-agent prompt, and `.status` if present before taking action. Sub-agent use is allowed only when the manifest and `Loop_design_request.runtime_capabilities.subagents=true` permit it.
@@ -491,7 +506,7 @@ Activation preconditions:
 
 1. The user has given explicit GO authorization after any required delegation approval gate.
 2. `.codex-loop/` has been written or updated successfully.
-3. `scripts/validate_codex_loop_scaffold.py .codex-loop` has passed.
+3. A fresh GO capability preflight exactly matches the approved capability snapshot, and `scripts/validate_codex_loop_scaffold.py .codex-loop` has passed.
 4. `.codex-loop/agent_manifest.json` permits the requested sub-agent roles.
 5. The current Codex host exposes native sub-agent lifecycle capability for the active session.
 
@@ -554,6 +569,13 @@ python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution
 ```
 
 Use the repository-relative script path instead when working inside this asset repository: `scripts/validate_dag_execution_evidence.py`.
+
+Before applying an approved replan, Codex MUST run:
+
+```bash
+python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_replan_proposal.py \
+  .codex-loop proposed_loop_spec.json replan_proposal.json
+```
 
 ## Procedure
 

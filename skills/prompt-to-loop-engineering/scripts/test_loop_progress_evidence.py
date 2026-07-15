@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from governance_contracts import canonical_json_digest
+
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR = SKILL_ROOT / "scripts" / "validate_loop_progress_evidence.py"
@@ -30,6 +32,19 @@ class LoopProgressEvidenceTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+    def refresh_config_binding(self, root: Path) -> None:
+        spec = json.loads((root / "loop_spec.json").read_text(encoding="utf-8"))
+        digest = canonical_json_digest(spec)
+        manifest_path = root / "agent_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["configuration_binding"]["loop_spec_digest"] = digest
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        for path in (root / "evidence").rglob("*.json"):
+            evidence = json.loads(path.read_text(encoding="utf-8"))
+            if "loop_spec_digest" in evidence:
+                evidence["loop_spec_digest"] = digest
+                path.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
 
     def test_valid_progress_samples_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -81,6 +96,7 @@ class LoopProgressEvidenceTests(unittest.TestCase):
                 if threshold["id"] == "max_iterations":
                     threshold["value"] = 1
             spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            self.refresh_config_binding(root)
             result = self.run_validator(root)
 
         self.assertEqual(result.returncode, 1)
@@ -132,7 +148,7 @@ class LoopProgressEvidenceTests(unittest.TestCase):
             result = self.run_validator(root)
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("schema_version must be 2.0.0", result.stdout)
+        self.assertIn("schema_version must be 3.0.0", result.stdout)
 
     def test_rejects_undeclared_cycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -168,6 +184,7 @@ class LoopProgressEvidenceTests(unittest.TestCase):
             second_cycle["id"] = "secondary_cycle"
             spec["control_flow"]["cycles"].append(second_cycle)
             spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            self.refresh_config_binding(root)
 
             progress = root / "evidence" / "progress"
             sample = json.loads((progress / "iteration_2.json").read_text(encoding="utf-8"))

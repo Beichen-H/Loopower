@@ -67,6 +67,17 @@ class DagExecutionEvidenceTests(unittest.TestCase):
         )
         self.assertIn("OK: DAG execution evidence validation passed.", result.stdout)
 
+    def test_evidence_bound_to_different_loop_spec_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy_scaffold(tmp)
+            path = self.evidence_for(root, "activation", "requirements-analysis")
+            evidence = json.loads(path.read_text(encoding="utf-8"))
+            evidence["loop_spec_digest"] = "sha256:" + "0" * 64
+            self.write_evidence(path, evidence)
+            result = self.run_validator(root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("LoopSpec digest mismatch", result.stdout)
+
     def test_activation_for_undeclared_role_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self.copy_scaffold(tmp)

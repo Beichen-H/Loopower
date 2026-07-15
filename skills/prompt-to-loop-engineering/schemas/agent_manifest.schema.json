@@ -12,6 +12,7 @@
     "loop_binding",
     "guardrails_ref",
     "governance_overlay",
+    "configuration_binding",
     "subagents",
     "tool_bindings",
     "knowledge_bindings",
@@ -19,7 +20,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "2.0.0"
+      "const": "3.0.0"
     },
     "manifest_id": {
       "type": "string",
@@ -111,6 +112,17 @@
           },
           "uniqueItems": true
         }
+      },
+      "additionalProperties": false
+    },
+    "configuration_binding": {
+      "type": "object",
+      "required": ["config_version", "loop_spec_digest", "approval_source", "capability_preflight_ref"],
+      "properties": {
+        "config_version": { "type": "integer", "minimum": 1 },
+        "loop_spec_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "approval_source": { "const": "explicit_user_go" },
+        "capability_preflight_ref": { "const": ".codex-loop/evidence/preflight/go-preflight.json" }
       },
       "additionalProperties": false
     },

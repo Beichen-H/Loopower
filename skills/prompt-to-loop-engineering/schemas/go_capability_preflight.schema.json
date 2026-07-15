@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meta-skills-library.dev/schemas/go_capability_preflight.schema.json",
+  "title": "GO Capability Preflight Evidence",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "evidence_type",
+    "config_version",
+    "loop_spec_digest",
+    "checked_at",
+    "observed_capabilities",
+    "lifecycle_discovery",
+    "capability_drift",
+    "status"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "evidence_type": { "const": "go_capability_preflight" },
+    "config_version": { "type": "integer", "minimum": 1 },
+    "loop_spec_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "checked_at": { "type": "string", "format": "date-time" },
+    "observed_capabilities": { "$ref": "loop_design_request.schema.json#/properties/runtime_capabilities" },
+    "lifecycle_discovery": {
+      "type": "object",
+      "required": ["keywords", "result", "host_api"],
+      "properties": {
+        "keywords": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "spawn_agent" },
+            { "const": "spawn_subagent" },
+            { "const": "subagent" },
+            { "const": "multi_agent" }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "result": { "enum": ["host_native_lifecycle_tool_found", "no_host_native_lifecycle_tool_found"] },
+        "host_api": { "type": ["string", "null"], "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "capability_drift": { "type": "array", "maxItems": 0 },
+    "status": { "const": "passed" }
+  },
+  "additionalProperties": false
+}

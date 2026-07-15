@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate authoritative v2 loop-progress evidence for a `.codex-loop/` scaffold.
+"""Validate authoritative v3 loop-progress evidence for a `.codex-loop/` scaffold.
 
 This is a post-hoc trace judge, not a Runtime Engine. It groups samples by run
 and cycle, verifies sequence completeness, and rejects all four hard-limit
@@ -16,8 +16,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from governance_contracts import canonical_json_digest
 
-PROGRESS_SCHEMA_VERSION = "2.0.0"
+
+PROGRESS_SCHEMA_VERSION = "3.0.0"
 HARD_LIMITS = {
     "max_runtime_seconds",
     "max_iterations",
@@ -27,6 +29,8 @@ HARD_LIMITS = {
 REQUIRED_SAMPLE_FIELDS = {
     "schema_version",
     "evidence_type",
+    "config_version",
+    "loop_spec_digest",
     "run_id",
     "cycle_id",
     "iteration",
@@ -120,6 +124,7 @@ def normalize_sample(path: Path) -> dict[str, Any]:
         require(isinstance(sample[key], str) and sample[key], f"{path}: {key} must be a non-empty string")
     _positive_integer(sample["iteration"], f"{path}: iteration")
     _positive_integer(sample["cycle_iteration"], f"{path}: cycle_iteration")
+    _positive_integer(sample["config_version"], f"{path}: config_version")
     for key in ["elapsed_runtime_seconds", "cumulative_token_count", "test_count", "new_evidence_count"]:
         _non_negative_integer(sample[key], f"{path}: {key}")
     for key in ["artifact_hash", "diff_fingerprint"]:
@@ -152,6 +157,12 @@ def validate_progress(root: Path) -> None:
     require(root.is_dir(), f"scaffold directory not found: {root}")
     require(root.name in {".codex-loop", "codex-loop"}, "scaffold directory must be named .codex-loop")
     loop_spec = load_json(root / "loop_spec.json")
+    manifest = load_json(root / "agent_manifest.json")
+    binding = manifest.get("configuration_binding")
+    require(isinstance(binding, dict), "agent_manifest.configuration_binding must be present")
+    expected_version = binding.get("config_version")
+    expected_digest = canonical_json_digest(loop_spec)
+    require(binding.get("loop_spec_digest") == expected_digest, "manifest LoopSpec digest is stale")
     limits = load_hard_limits(loop_spec)
     cycle_ids = declared_cycle_ids(loop_spec)
     samples = [normalize_sample(path) for path in progress_files(root)]
@@ -159,6 +170,8 @@ def validate_progress(root: Path) -> None:
     runs: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for sample in samples:
         require(sample["cycle_id"] in cycle_ids, f"progress sample references undeclared cycle: {sample['cycle_id']}")
+        require(sample["config_version"] == expected_version, "progress evidence config_version mismatch")
+        require(sample["loop_spec_digest"] == expected_digest, "progress evidence LoopSpec digest mismatch")
         runs[sample["run_id"]].append(sample)
 
     for run_id, run_samples in runs.items():

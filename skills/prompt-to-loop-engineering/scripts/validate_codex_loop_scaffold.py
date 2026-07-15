@@ -6,11 +6,16 @@ from __future__ import annotations
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from governance_contracts import (
+    SHA256_RE,
+    canonical_json_digest,
     validate_core_loop_governance,
+    validate_output_binding,
+    validate_passed_path_evaluators,
     validate_safe_agent_id as validate_shared_safe_agent_id,
 )
 
@@ -34,6 +39,8 @@ class ScaffoldValidationError(AssertionError):
 def load_json(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ScaffoldValidationError(f"missing JSON file: {path}") from exc
     except json.JSONDecodeError as exc:
         raise ScaffoldValidationError(f"invalid JSON in {path}: {exc}") from exc
     if not isinstance(payload, dict):
@@ -241,7 +248,7 @@ def validate_manifest_loop_alignment(manifest: dict[str, Any], loop_spec: dict[s
 
 
 def validate_manifest(root: Path, manifest: dict[str, Any], loop_spec: dict[str, Any]) -> None:
-    require(manifest.get("schema_version") == "2.0.0", "agent_manifest.schema_version must be 2.0.0")
+    require(manifest.get("schema_version") == "3.0.0", "agent_manifest.schema_version must be 3.0.0")
     host = manifest.get("codex_host")
     require(isinstance(host, dict) and host.get("executor") == "codex", "agent_manifest.codex_host.executor must be codex")
     require(host.get("independent_runtime_engine") is False, "agent_manifest must set independent_runtime_engine=false")
@@ -270,6 +277,60 @@ def validate_manifest(root: Path, manifest: dict[str, Any], loop_spec: dict[str,
         manifest_modes[name] = mode
     loop_modes = _tool_modes(loop_spec)
     require(manifest_modes == loop_modes, "Manifest/LoopSpec tool permission mode disagreement")
+
+
+def validate_configuration_binding(root: Path, manifest: dict[str, Any], loop_spec: dict[str, Any]) -> None:
+    """Bind the approved scaffold and GO preflight to one immutable config version."""
+    configuration = manifest.get("configuration_binding")
+    require(isinstance(configuration, dict), "agent_manifest.configuration_binding must be an object")
+    version = configuration.get("config_version") if isinstance(configuration, dict) else None
+    digest = configuration.get("loop_spec_digest") if isinstance(configuration, dict) else None
+    require(isinstance(version, int) and not isinstance(version, bool) and version >= 1, "configuration_binding.config_version must be a positive integer")
+    require(isinstance(digest, str) and SHA256_RE.fullmatch(digest) is not None, "configuration_binding.loop_spec_digest must be a sha256 digest")
+    require(digest == canonical_json_digest(loop_spec), "configuration_binding.loop_spec_digest does not match loop_spec.json")
+    require(configuration.get("approval_source") == "explicit_user_go", "configuration_binding.approval_source must be explicit_user_go")
+    require(configuration.get("capability_preflight_ref") == ".codex-loop/evidence/preflight/go-preflight.json", "configuration_binding.capability_preflight_ref is invalid")
+    preflight = load_json(root / "evidence" / "preflight" / "go-preflight.json")
+    require(preflight.get("schema_version") == "1.0.0", "GO preflight schema_version must be 1.0.0")
+    require(preflight.get("evidence_type") == "go_capability_preflight", "invalid GO preflight evidence_type")
+    require(preflight.get("config_version") == version, "GO preflight config_version mismatch")
+    require(preflight.get("loop_spec_digest") == digest, "GO preflight loop_spec_digest mismatch")
+    require(preflight.get("status") == "passed", "GO capability preflight must pass before activation")
+    require(preflight.get("capability_drift") == [], "GO capability preflight detected capability drift")
+    capabilities = loop_spec["runtime_binding"]["capabilities_snapshot"]
+    require(preflight.get("observed_capabilities") == capabilities, "GO preflight observed capabilities must exactly match the approved capability snapshot")
+
+    checked_at = preflight.get("checked_at")
+    require(isinstance(checked_at, str) and bool(checked_at), "GO preflight checked_at must be a non-empty ISO 8601 timestamp")
+    try:
+        parsed_checked_at = datetime.fromisoformat(checked_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ScaffoldValidationError("GO preflight checked_at must be a valid ISO 8601 timestamp") from exc
+    require(
+        "T" in checked_at and parsed_checked_at.tzinfo is not None,
+        "GO preflight checked_at must include time and UTC offset",
+    )
+
+    discovery = preflight.get("lifecycle_discovery")
+    require(isinstance(discovery, dict), "GO preflight lifecycle_discovery must be an object")
+    require(
+        discovery.get("keywords") == ["spawn_agent", "spawn_subagent", "subagent", "multi_agent"],
+        "GO preflight lifecycle discovery must use the mandatory host API keywords",
+    )
+    if capabilities.get("subagents") is True:
+        require(
+            discovery.get("result") == "host_native_lifecycle_tool_found",
+            "subagents=true requires successful GO-time host lifecycle discovery",
+        )
+        require(
+            isinstance(discovery.get("host_api"), str) and bool(discovery["host_api"].strip()),
+            "subagents=true requires a non-empty discovered host lifecycle API",
+        )
+    else:
+        require(
+            discovery.get("result") == "no_host_native_lifecycle_tool_found" and discovery.get("host_api") is None,
+            "subagents=false requires explicit no-host-lifecycle-tool evidence",
+        )
 
 
 def validate_guardrails(guardrails: dict[str, Any]) -> None:
@@ -301,8 +362,11 @@ def validate_scaffold(root: Path) -> None:
     validate_loop_spec(loop_spec)
     validate_manifest(root, manifest, loop_spec)
     validate_core_loop_governance(loop_spec, require)
+    validate_output_binding(loop_spec, require)
+    validate_passed_path_evaluators(loop_spec, require)
     validate_guardrails(guardrails)
     validate_status(root, loop_spec)
+    validate_configuration_binding(root, manifest, loop_spec)
 
 
 def main(argv: list[str]) -> int:

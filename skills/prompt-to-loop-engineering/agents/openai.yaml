@@ -1,7 +1,7 @@
 interface:
   display_name: "Prompt to Loop Engineering"
   short_description: "Build verified evidence-locked loop agents"
-  default_prompt: "Use $prompt-to-loop-engineering v3 to normalize this request, derive the smallest evidence-justified registry of dynamic professional roles, statically validate the loop_design_result, and when approved persist a lightweight .codex-loop scaffold whose LoopSpec controls transitions and termination, whose Codex host enforces policy, whose reviewers emit evidence only, and which adds no Runtime Engine."
+  default_prompt: "Use $prompt-to-loop-engineering v3.1 to normalize this request, derive the smallest evidence-justified registry of dynamic professional roles, bind a non-empty primary output, statically validate every passed path, and when approved persist a lightweight digest-bound .codex-loop scaffold with fresh GO capability preflight and no independent Runtime Engine."
 
 policy:
   allow_implicit_invocation: true

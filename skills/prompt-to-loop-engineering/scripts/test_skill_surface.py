@@ -103,11 +103,14 @@ class SkillSurfaceTests(unittest.TestCase):
             "schemas/guardrails.schema.json",
             "schemas/progress_evidence.schema.json",
             "schemas/normalization_report.schema.json",
+            "schemas/go_capability_preflight.schema.json",
+            "schemas/replan_proposal.schema.json",
             "scripts/validate_design_result.py",
             "scripts/validate_codex_loop_scaffold.py",
             "scripts/validate_dag_execution_evidence.py",
             "scripts/validate_loop_progress_evidence.py",
             "scripts/normalize_design_request.py",
+            "scripts/validate_replan_proposal.py",
             "examples/one_shot.json",
             "examples/workflow.json",
             "examples/agent_loop.json",
@@ -123,6 +126,7 @@ class SkillSurfaceTests(unittest.TestCase):
             "examples/codex-loop/guardrails.json",
             "examples/codex-loop/evidence/progress/iteration_1.json",
             "examples/codex-loop/evidence/progress/iteration_2.json",
+            "examples/codex-loop/evidence/preflight/go-preflight.json",
         ]
         required.extend(
             f"examples/codex-loop/subagents/{agent['id']}.md"
@@ -164,7 +168,9 @@ class SkillSurfaceTests(unittest.TestCase):
         readme_cn_path = REPO_ROOT / "README-CN.md"
         self.assertTrue(readme_cn_path.is_file(), "README-CN.md is missing")
         readme_cn = readme_cn_path.read_text(encoding="utf-8")
-        self.assertIn("**Skill version:** `3.0.0`", skill)
+        self.assertIn("**Skill version:** `3.1.0`", skill)
+        self.assertIn("### v3.1.0 (2026-07-15)", readme)
+        self.assertIn("### v3.1.0 (2026-07-15)", readme_cn)
         self.assertIn("### v3.0.0 (2026-07-13)", readme)
         self.assertIn("### v3.0.0 (2026-07-13)", readme_cn)
         self.assertIn("### v2.0.0 (2026-07-10)", readme)
@@ -172,12 +178,13 @@ class SkillSurfaceTests(unittest.TestCase):
         self_design = json.loads(
             (SKILL_ROOT / "loop_spec.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(self_design["skill_version"], "3.0.0")
-        self.assertEqual(self_design["spec_id"], "prompt-to-loop-engineering@3.0.0")
+        self.assertEqual(self_design["skill_version"], "3.1.0")
+        self.assertEqual(self_design["spec_id"], "prompt-to-loop-engineering@3.1.0")
         manifest = json.loads(
             (SKILL_ROOT / "examples" / "codex-loop" / "agent_manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["created_by_skill"]["version"], "3.0.0")
+        self.assertEqual(manifest["created_by_skill"]["version"], "3.1.0")
+        self.assertEqual(manifest["schema_version"], "3.0.0")
 
     def test_skill_requires_request_bound_validation_and_no_runtime_module(self) -> None:
         content = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -760,13 +767,13 @@ class SkillSurfaceTests(unittest.TestCase):
             missing = required - set(request["runtime_capabilities"])
             self.assertEqual(missing, set(), f"{path.name} misses capability fields: {sorted(missing)}")
 
-    def test_progress_examples_match_v2_schema_surface(self) -> None:
+    def test_progress_examples_match_v3_schema_surface(self) -> None:
         schema = json.loads((SKILL_ROOT / "schemas" / "progress_evidence.schema.json").read_text(encoding="utf-8"))
         required = set(schema["required"])
         for path in (SKILL_ROOT / "examples" / "codex-loop" / "evidence" / "progress").glob("*.json"):
             sample = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(set(sample), required, f"{path.name} does not match progress schema surface")
-            self.assertEqual(sample["schema_version"], "2.0.0")
+            self.assertEqual(sample["schema_version"], "3.0.0")
 
 
 if __name__ == "__main__":

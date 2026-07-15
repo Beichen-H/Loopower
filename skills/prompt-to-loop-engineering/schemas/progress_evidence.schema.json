@@ -1,17 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://meta-skills-library.dev/schemas/progress_evidence.schema.json",
-  "title": "Loop Progress Evidence v2",
+  "title": "Loop Progress Evidence v3",
   "type": "object",
   "required": [
-    "schema_version", "evidence_type", "run_id", "cycle_id", "iteration",
+    "schema_version", "evidence_type", "config_version", "loop_spec_digest", "run_id", "cycle_id", "iteration",
     "cycle_iteration", "observed_at", "measurement_source", "token_count_quality",
     "elapsed_runtime_seconds", "cumulative_token_count", "artifact_hash",
     "diff_fingerprint", "test_count", "new_evidence_count"
   ],
   "properties": {
-    "schema_version": { "const": "2.0.0" },
+    "schema_version": { "const": "3.0.0" },
     "evidence_type": { "const": "progress_sample" },
+    "config_version": { "type": "integer", "minimum": 1 },
+    "loop_spec_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "run_id": { "type": "string", "minLength": 1 },
     "cycle_id": { "type": "string", "minLength": 1 },
     "iteration": { "type": "integer", "minimum": 1 },

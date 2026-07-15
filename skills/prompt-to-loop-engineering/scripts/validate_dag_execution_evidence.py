@@ -16,6 +16,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from governance_contracts import canonical_json_digest
+
 
 EXPECTED_RUNTIME_MODE = "COOPERATIVE_GOVERNANCE"
 EXPECTED_SCHEDULER = "codex_loop_dag"
@@ -254,8 +256,13 @@ def validate_evidence_file(
     owned_nodes: dict[str, str],
     node_ids: set[str],
     edge_pairs: set[tuple[str, str]],
+    config_version: int,
+    loop_spec_digest: str,
 ) -> None:
     require(path.is_file(), f"missing required evidence file: {path.as_posix()}")
+    require(evidence.get("schema_version") == "3.0.0", f"{path}: schema_version must be 3.0.0")
+    require(evidence.get("config_version") == config_version, f"{path}: config_version mismatch")
+    require(evidence.get("loop_spec_digest") == loop_spec_digest, f"{path}: LoopSpec digest mismatch")
     evidence_type = evidence.get("evidence_type")
     if evidence_type == "activation":
         validate_activation(path, evidence, owned_nodes)
@@ -274,6 +281,12 @@ def validate_evidence(root: Path) -> None:
 
     loop_spec = load_json(root / "loop_spec.json")
     manifest = load_json(root / "agent_manifest.json")
+    configuration = manifest.get("configuration_binding")
+    require(isinstance(configuration, dict), "agent_manifest.configuration_binding must be present")
+    config_version = configuration.get("config_version")
+    require(isinstance(config_version, int) and not isinstance(config_version, bool) and config_version >= 1, "configuration_binding.config_version must be a positive integer")
+    loop_spec_digest = canonical_json_digest(loop_spec)
+    require(configuration.get("loop_spec_digest") == loop_spec_digest, "manifest LoopSpec digest is stale")
     validate_loop_governance(loop_spec)
     required_refs = validate_manifest_overlay(manifest)
     owned_nodes, node_ids, edge_pairs, entry_node = topology_indexes(loop_spec, manifest)
@@ -284,7 +297,10 @@ def validate_evidence(root: Path) -> None:
         path = localize_codex_loop_ref(root, ref)
         require(path.is_file(), f"missing required evidence file: {path.as_posix()}")
         evidence = load_json(path)
-        validate_evidence_file(path, evidence, owned_nodes, node_ids, edge_pairs)
+        validate_evidence_file(
+            path, evidence, owned_nodes, node_ids, edge_pairs,
+            config_version, loop_spec_digest,
+        )
         evidence_type = evidence.get("evidence_type")
         node_id = evidence.get("node_id")
         if evidence_type in {"activation", "completion"} and isinstance(node_id, str):
