@@ -1,4 +1,4 @@
-# Meta Skills Library
+# Loopower Library
 
 Portable, contract-first skills for Codex-native agent workflows.
 
