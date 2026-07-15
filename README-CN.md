@@ -131,6 +131,14 @@ cp skills/prompt-to-loop-engineering/templates/agents-gate/AGENTS.md /path/to/yo
 
 版本 `1.4.0` 增加了 `Agent Lifecycle Activation Contract`。
 
+### 让不同模型预设显式启用 Sub-agent 委派
+
+在本项目的本地实测中，`5.6 Sol Ultra` 是受测预设里唯一能够在没有显式委派合同的情况下稳定主动启动 sub-agents 的预设。这反映的是已观察到的宿主路由倾向，并不代表其他模型在能力上天然无法使用 sub-agents。Loopower 不再依赖模型“自发想起委派”：它会探测宿主生命周期能力，根据 LoopSpec 拓扑推导任务专用阵容，持久化每个角色的 prompt，并在审批通过后要求显式激活 live processes。
+
+因此，只要当前 Codex 宿主确实暴露并授权了 `spawn_agent`、`spawn_subagent` 或等效生命周期 API，标准模型和正常推理强度预设也可以进入受治理的 sub-agent loops。本 Skill 不会凭空创建宿主 API、改变模型权益、绕过权限，也不保证不同模型具有完全相同的委派质量。若宿主缺少生命周期能力，验证将 fail closed，而不会把主线程中的角色扮演伪装成 live sub-agent process。
+
+阵容由拓扑决定，而不是固定模板：一个任务可以激活 researcher、data engineer、implementation specialist、security auditor、independent verifier，或其他有明确必要性的专业角色。有限 agent 集合、handoff、循环预算、进展信号、审阅隔离和终止路径均由 LoopSpec 定义，而不是由硬编码的三 Agent 阵容定义。
+
 当用户显式给出 `GO`，并且 `.codex-loop/` 已经写入且验证通过后，Codex 不能只把 scaffold 当作纯文本。如果当前 Codex 宿主暴露 `spawn_subagent`、`spawn_agent` 或等效原生 sub-agent lifecycle API，Codex 必须把 `.codex-loop/subagents/` 下已批准的角色激活为 live host processes。
 
 每个 live role 必须使用对应本地 prompt 文件作为权威 System Prompt 基线。例如：
@@ -159,7 +167,7 @@ reasoning_intensity: "extended_thought"
 model_config: inherit_parent
 ```
 
-如果当前宿主 API 无法直接传递模型配置参数，生成的 sub-agent prompts 必须包含兜底指令，要求子线程在开始实质性工作前请求对齐父会话的 5.5 ultra-high reasoning profile。若无法确认对齐，子线程必须报告 `model_configuration_degraded`。
+如果当前宿主 API 无法直接传递模型配置参数，生成的 sub-agent prompts 必须包含兜底指令，要求子线程在开始实质性工作前请求对齐父会话已批准的推理配置。若无法确认对齐，子线程必须报告 `model_configuration_degraded`。
 
 任何依赖 live sub-agents 的 `agent_loop` scaffold，都必须在 `loop_spec.json` 中记录该要求：
 

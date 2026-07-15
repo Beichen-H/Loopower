@@ -494,6 +494,25 @@ class SkillSurfaceTests(unittest.TestCase):
             stale = [phrase for phrase in forbidden if phrase in content]
             self.assertEqual(stale, [], f"{name} has fixed-cast mappings: {stale}")
 
+    def test_readmes_explain_cross_preset_subagent_activation_boundary(self) -> None:
+        self.require_full_repository()
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
+        for phrase in (
+            "Making sub-agent delegation explicit across model presets",
+            "standard models and normal reasoning presets",
+            "does not create a missing host API",
+            "The lineup is topology-derived rather than fixed",
+        ):
+            self.assertIn(phrase, readme)
+        for phrase in (
+            "让不同模型预设显式启用 Sub-agent 委派",
+            "标准模型和正常推理强度预设",
+            "不会凭空创建宿主 API",
+            "阵容由拓扑决定，而不是固定模板",
+        ):
+            self.assertIn(phrase, readme_cn)
+
     def test_loop_spec_schema_and_example_log_subagent_reasoning_intensity(self) -> None:
         import json
 

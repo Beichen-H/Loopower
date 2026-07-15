@@ -134,6 +134,14 @@ This gate is advisory and permission-preserving. It does not install a Runtime E
 
 Version `1.4.0` adds the `Agent Lifecycle Activation Contract`.
 
+### Making sub-agent delegation explicit across model presets
+
+In project-local testing, the `5.6 Sol Ultra` preset was the only tested preset that consistently initiated sub-agents without an explicit delegation contract. This is an observed routing tendency, not evidence that other models are intrinsically unable to use sub-agents. Loopower removes reliance on spontaneous delegation: it discovers the host lifecycle capability, derives a task-specific sub-agent lineup from the LoopSpec topology, persists each role prompt, and requires explicit live-process activation after approval.
+
+As a result, standard models and normal reasoning presets can participate in governed sub-agent loops when the active Codex host exposes an authorized `spawn_agent`, `spawn_subagent`, or equivalent lifecycle API. The Skill does not create a missing host API, change model entitlements, bypass permissions, or guarantee identical delegation quality across models. If lifecycle capability is absent, validation fails closed instead of pretending that inline role-play is a live sub-agent process.
+
+The lineup is topology-derived rather than fixed: a task may activate a researcher, data engineer, implementation specialist, security auditor, independent verifier, or another justified professional role. The LoopSpec—not a hard-coded three-agent template—defines the finite agent set, handoffs, loop budgets, progress signals, reviewer isolation, and termination paths.
+
 After a user gives explicit `GO`, and after `.codex-loop/` has been written and validated, Codex must not treat the scaffold as passive text only. If the current Codex host exposes `spawn_subagent`, `spawn_agent`, or an equivalent native sub-agent lifecycle API, Codex must activate approved roles from `.codex-loop/subagents/` as live host processes.
 
 Each live role must use the corresponding local prompt file as its authoritative System Prompt baseline. For example:
@@ -162,7 +170,7 @@ reasoning_intensity: "extended_thought"
 model_config: inherit_parent
 ```
 
-If the active host API cannot pass a model configuration parameter, generated sub-agent prompts must include a fallback instruction requiring the child thread to request alignment with the parent 5.5 ultra-high reasoning profile before substantive work. If alignment cannot be confirmed, the child must report `model_configuration_degraded`.
+If the active host API cannot pass a model configuration parameter, generated sub-agent prompts must include a fallback instruction requiring the child thread to request alignment with the parent session's approved reasoning profile before substantive work. If alignment cannot be confirmed, the child must report `model_configuration_degraded`.
 
 Every generated `agent_loop` scaffold that relies on live sub-agents must log the requirement in `loop_spec.json`:
 
