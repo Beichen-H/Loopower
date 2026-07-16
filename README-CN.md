@@ -10,6 +10,63 @@
 
 [English README](README.md)
 
+## 架构总览
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0f172a","primaryColor":"#1f2937","primaryTextColor":"#e5e7eb","primaryBorderColor":"#84cc16","lineColor":"#65a30d","secondaryColor":"#111827","tertiaryColor":"#0f172a","fontFamily":"Inter, Segoe UI, sans-serif","fontSize":"16px"}}}%%
+flowchart TD
+    subgraph WORKSPACE["项目工作区"]
+        direction TB
+        RAW["原始请求"]
+        NORMALIZE["请求规范化"]
+        EFFECTIVE["有效请求<br/>+ 来源记录"]
+        DESIGN["设计 + 验证"]
+        GO{"显式 GO"}
+
+        RAW --> NORMALIZE
+        NORMALIZE --> EFFECTIVE
+        EFFECTIVE --> DESIGN
+        DESIGN --> GO
+
+        subgraph SCAFFOLD[".codex-loop/ · 静态合同"]
+            direction LR
+            SPEC["LoopSpec"]
+            MANIFEST["Manifest"]
+            PROMPTS["Subagent<br/>Prompts"]
+        end
+
+        GO --> SCAFFOLD
+        NORUNTIME["无独立 Runtime<br/>无 DB · Queue · Daemon"]
+        SCAFFOLD --> NORUNTIME
+    end
+
+    subgraph HOSTENV["宿主环境"]
+        direction TB
+        CODEX["Codex 宿主<br/>机械控制器"]
+        SPAWN["原生生命周期 API<br/>spawn agent"]
+        LIVE["Live Subagents<br/>动态角色"]
+
+        CODEX --> SPAWN
+        SPAWN -->|"继承模型配置<br/>extended thought"| LIVE
+    end
+
+    SCAFFOLD -->|"机械读取合同"| CODEX
+
+    classDef charcoal fill:#1f2937,stroke:#475569,color:#e5e7eb,stroke-width:1.5px;
+    classDef lime fill:#365314,stroke:#a3e635,color:#f7fee7,stroke-width:2.5px;
+    classDef blue fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:2px;
+    classDef warning fill:#292524,stroke:#84cc16,color:#ecfccb,stroke-width:2px;
+    class RAW,NORMALIZE,EFFECTIVE,SPEC,MANIFEST,PROMPTS charcoal;
+    class DESIGN,GO lime;
+    class CODEX,SPAWN,LIVE blue;
+    class NORUNTIME warning;
+    style WORKSPACE fill:#0f172a,stroke:#64748b,stroke-width:2px,color:#e5e7eb
+    style SCAFFOLD fill:#111827,stroke:#84cc16,stroke-width:2px,color:#e5e7eb
+    style HOSTENV fill:#0b1120,stroke:#60a5fa,stroke-width:2px,color:#e5e7eb
+```
+
+> 本图是经过简化的架构视图；JSON Schema 与验证器仍是规范事实来源。
+
 ## 它让 Codex 获得什么能力
 
 `prompt-to-loop-engineering` 帮 Codex 设计并持久化：
@@ -230,6 +287,59 @@ agent_manifest.governance_overlay.host_linear_fulfillment_takeover = forbidden
 python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
 ```
 
+### 证据哈希链
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0f172a","primaryColor":"#1f2937","primaryTextColor":"#e5e7eb","primaryBorderColor":"#84cc16","lineColor":"#65a30d","secondaryColor":"#111827","tertiaryColor":"#0f172a","fontFamily":"Inter, Segoe UI, sans-serif","fontSize":"16px"}}}%%
+flowchart TD
+    SPEC["当前 LoopSpec"]
+    HASH["Canonical SHA-256"]
+    BINDING["摘要 + 配置版本"]
+
+    SPEC --> HASH
+    HASH --> BINDING
+
+    subgraph EVIDENCE[".codex-loop/evidence/"]
+        direction LR
+        ACTIVATION["activation/"]
+        HANDOFF["handoff/"]
+        COMPLETION["completion/"]
+    end
+
+    BINDING -->|"嵌入来源绑定"| EVIDENCE
+    CHAIN["绑定证据链"]
+    EVIDENCE --> CHAIN
+    VALIDATOR["DAG 证据验证器<br/>重新哈希 + 比对"]
+    DECISION{"来源绑定<br/>一致？"}
+
+    CHAIN --> VALIDATOR
+    VALIDATOR --> DECISION
+
+    subgraph OUTCOME["确定性终态"]
+        direction LR
+        OK["✓ OK<br/>证据有效"]
+        FAIL["✕ FAIL-CLOSED<br/>发现漂移"]
+    end
+
+    DECISION -->|"一致"| OK
+    DECISION -->|"不一致"| FAIL
+
+    classDef charcoal fill:#1f2937,stroke:#475569,color:#e5e7eb,stroke-width:1.5px;
+    classDef lime fill:#365314,stroke:#a3e635,color:#f7fee7,stroke-width:2.5px;
+    classDef blue fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:2px;
+    classDef success fill:#14532d,stroke:#a3e635,color:#f0fdf4,stroke-width:3px;
+    classDef danger fill:#450a0a,stroke:#ef4444,color:#fee2e2,stroke-width:3px;
+    class SPEC,CHAIN charcoal;
+    class HASH,BINDING,DECISION lime;
+    class ACTIVATION,HANDOFF,COMPLETION,VALIDATOR blue;
+    class OK success;
+    class FAIL danger;
+    style EVIDENCE fill:#0f172a,stroke:#60a5fa,stroke-width:2px,color:#e5e7eb
+    style OUTCOME fill:#111827,stroke:#64748b,stroke-width:2px,color:#e5e7eb
+```
+
+> 本图是简化后的证据流；Schema `3.0.0` 与 `validate_dag_execution_evidence.py` 仍是权威合同。
+
 ## 动态专业角色拓扑
 
 版本 `3.0.0` 使用 topology-derived professional roles 替代固定三角色阵容。生成的 LoopSpec 可以声明 `requirements-analyst`、`feature-engineer`、`test-verifier`、`security-auditor` 或其他任务专用身份。这些名称只是示例、not reserved roles；权限来自闭合的 `governance_role` 分类与已验证的工具绑定，而不是专业 id。
@@ -237,6 +347,53 @@ python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution
 本合同设定 no universal declared-role ceiling，但每个生成的 registry 与 Manifest 都必须是 finite, statically validated，并在已批准的 GO 阶段保持闭合。声明的团队规模不代表同时执行；capability-bound concurrency 受规范化后的宿主生命周期能力与并行能力限制。如果需要新增专家，宿主必须暂停、修订 scaffold、重新验证，并在激活前取得任何必要的新批准。
 
 权责边界是确定的：LoopSpec owns transition and termination policy。Codex host controller mechanically evaluates 已声明的谓词与硬停止条件，并且只能选择满足条件的已声明边。reviewers and verifiers produce evidence only；它们不能选边、修改阈值、写入控制器状态或宣布全局完成。
+
+### 评估器路径支配性
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0f172a","primaryColor":"#1f2937","primaryTextColor":"#e5e7eb","primaryBorderColor":"#84cc16","lineColor":"#65a30d","secondaryColor":"#111827","tertiaryColor":"#0f172a","fontFamily":"Inter, Segoe UI, sans-serif","fontSize":"16px"}}}%%
+flowchart TD
+    ENTRY["需求<br/>分析员"]
+    IMPL["功能<br/>工程师"]
+    ENTRY --> IMPL
+
+    subgraph VALID["验证通过路径"]
+        direction TB
+        VERIFY["测试验证器<br/>AC-1 Evaluator"]
+        REVIEW["安全<br/>审计员"]
+        PASS["✓ PASSED"]
+        VERIFY --> REVIEW
+        REVIEW --> PASS
+    end
+
+    subgraph REJECTED["被拒绝的旁路"]
+        direction TB
+        BYPASS["绕过尝试<br/>跳过 Evaluator"]
+        VALIDATOR["validate_design_result.py<br/>支配性校验"]
+        BLOCK["✕ FAIL-CLOSED<br/>DesignValidationError"]
+        BYPASS -.-> VALIDATOR
+        VALIDATOR --> BLOCK
+    end
+
+    IMPL --> VERIFY
+    IMPL -. "直接进入 passed" .-> BYPASS
+
+    classDef charcoal fill:#1f2937,stroke:#475569,color:#e5e7eb,stroke-width:1.5px;
+    classDef lime fill:#365314,stroke:#a3e635,color:#f7fee7,stroke-width:2.5px;
+    classDef blue fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:2px;
+    classDef danger fill:#450a0a,stroke:#ef4444,color:#fee2e2,stroke-width:2.5px;
+    classDef success fill:#14532d,stroke:#a3e635,color:#f0fdf4,stroke-width:3px;
+    class ENTRY,IMPL,REVIEW charcoal;
+    class VERIFY lime;
+    class VALIDATOR blue;
+    class BYPASS,BLOCK danger;
+    class PASS success;
+    style VALID fill:#0f172a,stroke:#65a30d,stroke-width:2px,color:#e5e7eb
+    style REJECTED fill:#111827,stroke:#ef4444,stroke-width:2px,color:#fee2e2
+    linkStyle 3,4,6 stroke:#ef4444,stroke-width:3px,stroke-dasharray:7 5
+```
+
+> 本图压缩了示例拓扑；mandatory evaluator 绑定与静态支配性验证器定义实际验收规则。
 
 一个代表性的动态 prompt 树如下：
 

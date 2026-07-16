@@ -10,6 +10,63 @@ This project does not contain an independent Runtime Engine. Codex is the host e
 
 [中文说明](README-CN.md)
 
+## Architecture at a glance
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0f172a","primaryColor":"#1f2937","primaryTextColor":"#e5e7eb","primaryBorderColor":"#84cc16","lineColor":"#65a30d","secondaryColor":"#111827","tertiaryColor":"#0f172a","fontFamily":"Inter, Segoe UI, sans-serif","fontSize":"16px"}}}%%
+flowchart TD
+    subgraph WORKSPACE["PROJECT WORKSPACE"]
+        direction TB
+        RAW["Raw Request"]
+        NORMALIZE["Normalize Request"]
+        EFFECTIVE["Effective Request<br/>+ Provenance"]
+        DESIGN["Design + Validate"]
+        GO{"Explicit GO"}
+
+        RAW --> NORMALIZE
+        NORMALIZE --> EFFECTIVE
+        EFFECTIVE --> DESIGN
+        DESIGN --> GO
+
+        subgraph SCAFFOLD[".codex-loop/ · STATIC CONTRACTS"]
+            direction LR
+            SPEC["LoopSpec"]
+            MANIFEST["Manifest"]
+            PROMPTS["Subagent<br/>Prompts"]
+        end
+
+        GO --> SCAFFOLD
+        NORUNTIME["NO RUNTIME<br/>No DB · Queue · Daemon"]
+        SCAFFOLD --> NORUNTIME
+    end
+
+    subgraph HOSTENV["HOST ENVIRONMENT"]
+        direction TB
+        CODEX["Codex Host<br/>Mechanical Controller"]
+        SPAWN["Native Lifecycle API<br/>spawn agent"]
+        LIVE["Live Subagents<br/>Dynamic Roles"]
+
+        CODEX --> SPAWN
+        SPAWN -->|"inherit model config<br/>extended thought"| LIVE
+    end
+
+    SCAFFOLD -->|"read contracts"| CODEX
+
+    classDef charcoal fill:#1f2937,stroke:#475569,color:#e5e7eb,stroke-width:1.5px;
+    classDef lime fill:#365314,stroke:#a3e635,color:#f7fee7,stroke-width:2.5px;
+    classDef blue fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:2px;
+    classDef warning fill:#292524,stroke:#84cc16,color:#ecfccb,stroke-width:2px;
+    class RAW,NORMALIZE,EFFECTIVE,SPEC,MANIFEST,PROMPTS charcoal;
+    class DESIGN,GO lime;
+    class CODEX,SPAWN,LIVE blue;
+    class NORUNTIME warning;
+    style WORKSPACE fill:#0f172a,stroke:#64748b,stroke-width:2px,color:#e5e7eb
+    style SCAFFOLD fill:#111827,stroke:#84cc16,stroke-width:2px,color:#e5e7eb
+    style HOSTENV fill:#0b1120,stroke:#60a5fa,stroke-width:2px,color:#e5e7eb
+```
+
+> This diagram is a simplified architectural view. JSON Schemas and validators remain the normative source of truth.
+
 ## What it gives Codex
 
 `prompt-to-loop-engineering` helps Codex design and persist:
@@ -233,6 +290,59 @@ Use the post-hoc hard validator to reject missing activation, handoff, completio
 python ~/.codex/skills/prompt-to-loop-engineering/scripts/validate_dag_execution_evidence.py .codex-loop
 ```
 
+### Evidence hash chain
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0f172a","primaryColor":"#1f2937","primaryTextColor":"#e5e7eb","primaryBorderColor":"#84cc16","lineColor":"#65a30d","secondaryColor":"#111827","tertiaryColor":"#0f172a","fontFamily":"Inter, Segoe UI, sans-serif","fontSize":"16px"}}}%%
+flowchart TD
+    SPEC["Active LoopSpec"]
+    HASH["Canonical SHA-256"]
+    BINDING["Digest + Config Version"]
+
+    SPEC --> HASH
+    HASH --> BINDING
+
+    subgraph EVIDENCE[".codex-loop/evidence/"]
+        direction LR
+        ACTIVATION["activation/"]
+        HANDOFF["handoff/"]
+        COMPLETION["completion/"]
+    end
+
+    BINDING -->|"embed lineage"| EVIDENCE
+    CHAIN["Bound Evidence Chain"]
+    EVIDENCE --> CHAIN
+    VALIDATOR["DAG Evidence Validator<br/>Rehash + Compare"]
+    DECISION{"Lineage<br/>Matches?"}
+
+    CHAIN --> VALIDATOR
+    VALIDATOR --> DECISION
+
+    subgraph OUTCOME["DETERMINISTIC OUTCOME"]
+        direction LR
+        OK["✓ OK<br/>Evidence Valid"]
+        FAIL["✕ FAIL-CLOSED<br/>Drift Detected"]
+    end
+
+    DECISION -->|"YES"| OK
+    DECISION -->|"NO"| FAIL
+
+    classDef charcoal fill:#1f2937,stroke:#475569,color:#e5e7eb,stroke-width:1.5px;
+    classDef lime fill:#365314,stroke:#a3e635,color:#f7fee7,stroke-width:2.5px;
+    classDef blue fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:2px;
+    classDef success fill:#14532d,stroke:#a3e635,color:#f0fdf4,stroke-width:3px;
+    classDef danger fill:#450a0a,stroke:#ef4444,color:#fee2e2,stroke-width:3px;
+    class SPEC,CHAIN charcoal;
+    class HASH,BINDING,DECISION lime;
+    class ACTIVATION,HANDOFF,COMPLETION,VALIDATOR blue;
+    class OK success;
+    class FAIL danger;
+    style EVIDENCE fill:#0f172a,stroke:#60a5fa,stroke-width:2px,color:#e5e7eb
+    style OUTCOME fill:#111827,stroke:#64748b,stroke-width:2px,color:#e5e7eb
+```
+
+> This diagram is a simplified evidence flow. Schema `3.0.0` and `validate_dag_execution_evidence.py` remain authoritative.
+
 ## Dynamic Professional Topology
 
 Version `3.0.0` replaces the fixed three-role cast with topology-derived professional roles. A generated LoopSpec may declare `requirements-analyst`, `feature-engineer`, `test-verifier`, `security-auditor`, or other task-specific identities. These names are examples and not reserved roles; authority comes from the closed `governance_role` classification and validated tool bindings, never from a professional id.
@@ -240,6 +350,53 @@ Version `3.0.0` replaces the fixed three-role cast with topology-derived profess
 There is no universal declared-role ceiling. Every generated registry and Manifest is nevertheless finite, statically validated, and closed for the approved GO phase. Declared team size does not imply simultaneous execution: capability-bound concurrency is limited by the normalized host lifecycle and parallel-execution capabilities. A newly needed specialist requires the host to pause, amend the scaffold, revalidate it, and obtain any required fresh approval before activation.
 
 The authority boundary is explicit: LoopSpec owns transition and termination policy. The Codex host controller mechanically evaluates declared predicates and hard stops, then selects only an eligible declared edge. Under this contract, reviewers and verifiers produce evidence only; they cannot select edges, change thresholds, write controller-owned state, or declare global completion.
+
+### Evaluator path dominance
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0f172a","primaryColor":"#1f2937","primaryTextColor":"#e5e7eb","primaryBorderColor":"#84cc16","lineColor":"#65a30d","secondaryColor":"#111827","tertiaryColor":"#0f172a","fontFamily":"Inter, Segoe UI, sans-serif","fontSize":"16px"}}}%%
+flowchart TD
+    ENTRY["Requirements<br/>Analyst"]
+    IMPL["Feature<br/>Engineer"]
+    ENTRY --> IMPL
+
+    subgraph VALID["VALIDATED PATH"]
+        direction TB
+        VERIFY["Test Verifier<br/>AC-1 Evaluator"]
+        REVIEW["Security<br/>Auditor"]
+        PASS["✓ PASSED"]
+        VERIFY --> REVIEW
+        REVIEW --> PASS
+    end
+
+    subgraph REJECTED["REJECTED BYPASS"]
+        direction TB
+        BYPASS["Bypass Attempt<br/>Skip Evaluator"]
+        VALIDATOR["validate_design_result.py<br/>Dominance Check"]
+        BLOCK["✕ FAIL-CLOSED<br/>DesignValidationError"]
+        BYPASS -.-> VALIDATOR
+        VALIDATOR --> BLOCK
+    end
+
+    IMPL --> VERIFY
+    IMPL -. "direct to passed" .-> BYPASS
+
+    classDef charcoal fill:#1f2937,stroke:#475569,color:#e5e7eb,stroke-width:1.5px;
+    classDef lime fill:#365314,stroke:#a3e635,color:#f7fee7,stroke-width:2.5px;
+    classDef blue fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:2px;
+    classDef danger fill:#450a0a,stroke:#ef4444,color:#fee2e2,stroke-width:2.5px;
+    classDef success fill:#14532d,stroke:#a3e635,color:#f0fdf4,stroke-width:3px;
+    class ENTRY,IMPL,REVIEW charcoal;
+    class VERIFY lime;
+    class VALIDATOR blue;
+    class BYPASS,BLOCK danger;
+    class PASS success;
+    style VALID fill:#0f172a,stroke:#65a30d,stroke-width:2px,color:#e5e7eb
+    style REJECTED fill:#111827,stroke:#ef4444,stroke-width:2px,color:#fee2e2
+    linkStyle 3,4,6 stroke:#ef4444,stroke-width:3px,stroke-dasharray:7 5
+```
+
+> This diagram compresses the example topology. Mandatory evaluator bindings and the static dominance validator define the actual acceptance rule.
 
 A representative generated prompt tree is:
 

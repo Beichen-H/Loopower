@@ -515,6 +515,25 @@ class SkillSurfaceTests(unittest.TestCase):
         ):
             self.assertIn(phrase, readme_cn)
 
+    def test_readmes_embed_three_progressively_disclosed_mermaid_diagrams(self) -> None:
+        self.require_full_repository()
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
+        self.assertEqual(readme.count("```mermaid"), 3)
+        self.assertEqual(readme_cn.count("```mermaid"), 3)
+        self.assertLess(readme.index("## Architecture at a glance"), readme.index("## What it gives Codex"))
+        self.assertLess(readme.index("## Evidence-Locked DAG Execution Governance"), readme.index("### Evidence hash chain"))
+        self.assertLess(readme.index("### Evidence hash chain"), readme.index("## Dynamic Professional Topology"))
+        self.assertLess(readme.index("## Dynamic Professional Topology"), readme.index("### Evaluator path dominance"))
+        self.assertLess(readme.index("### Evaluator path dominance"), readme.index("## Architectural Efficacy"))
+        self.assertLess(readme_cn.index("## 架构总览"), readme_cn.index("## 它让 Codex 获得什么能力"))
+        self.assertLess(readme_cn.index("## Evidence-Locked DAG Execution Governance"), readme_cn.index("### 证据哈希链"))
+        self.assertLess(readme_cn.index("### 证据哈希链"), readme_cn.index("## 动态专业角色拓扑"))
+        self.assertLess(readme_cn.index("## 动态专业角色拓扑"), readme_cn.index("### 评估器路径支配性"))
+        self.assertLess(readme_cn.index("### 评估器路径支配性"), readme_cn.index("## 架构效能与边界评估"))
+        self.assertIn("validators remain the normative source of truth", readme)
+        self.assertIn("JSON Schema 与验证器仍是规范事实来源", readme_cn)
+
     def test_loop_spec_schema_and_example_log_subagent_reasoning_intensity(self) -> None:
         import json
 
