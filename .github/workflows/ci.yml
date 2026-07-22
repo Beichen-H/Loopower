@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     name: Validate prompt-to-loop-engineering
@@ -52,3 +55,27 @@ jobs:
             --request .ci/effective-agent-loop-request.json \
             --raw-request skills/prompt-to-loop-engineering/examples/requests/agent_loop.json \
             --normalization-report .ci/agent-loop-normalization-report.json
+
+  windows-install:
+    name: Validate Windows install and tests
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run unit tests
+        run: python -B -m unittest discover -s skills/prompt-to-loop-engineering/scripts -p "test_*.py" -v
+
+      - name: Verify first install
+        shell: pwsh
+        run: python install_local.py --target "$env:RUNNER_TEMP\codex-skills" --verify
+
+      - name: Verify repeat install
+        shell: pwsh
+        run: python install_local.py --target "$env:RUNNER_TEMP\codex-skills" --force --verify

@@ -8,7 +8,9 @@ Runtime Engine; execution remains the responsibility of an external controller.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -84,7 +86,16 @@ def safe_remove_existing(destination: Path, target_root: Path) -> None:
         raise SystemExit("Refusing to remove the target skills root itself.")
     if resolved_target_root not in resolved_destination.parents:
         raise SystemExit(f"Refusing to remove path outside target root: {destination}")
-    shutil.rmtree(resolved_destination)
+    shutil.rmtree(resolved_destination, onerror=remove_readonly_entry)
+
+
+def remove_readonly_entry(function, path: str, error_info) -> None:
+    """Retry one failed removal after clearing a copied Windows read-only bit."""
+    error = error_info[1]
+    if not isinstance(error, PermissionError):
+        raise error
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
 
 
 def run_verification(destination: Path) -> None:
@@ -119,7 +130,7 @@ def write_console_safe(value: str, stream: TextIO) -> None:
 def main() -> int:
     args = parse_args()
     source = require_skill_source(args.skill)
-    target_root = args.target.expanduser()
+    target_root = args.target.expanduser().resolve()
     destination = target_root / args.skill
 
     print(f"Source:      {source}")

@@ -1,14 +1,52 @@
 # Loopower Library
 
-面向 Codex-native agent workflow 的可移植、合同优先 Skill 资产库。
-
-**让所有宿主能力兼容的 GPT 模型使用受治理的 Sub-agent Loop。** Loopower 不再等待模型自发决定是否委派，而是将 sub-agent 激活、handoff、循环预算和退出条件转化为经过验证的项目本地合同。
-
-当前首个发布 Skill 是 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md)，版本 `3.1.0`：它是使用 topology-derived professional roles、具备可验证请求规范化、主输出保证、配置绑定证据、原子 Replan 审批、Evidence-Locked DAG Execution Governance 和基于访问模式审阅隔离的 Codex-native Loop Agent Builder。它可以把自然语言任务转换为经过验证的 `loop_design_result`，在需要时持久化轻量 `.codex-loop/` Agent Config Scaffold，并在不独占会话路由的前提下治理审批、宿主原生 live sub-agent 激活与后验轨迹验证。
-
-本项目不包含独立 Runtime Engine。Codex 就是宿主执行器：它读取项目本地配置，遵守 guardrails，在宿主支持时通过当前 Codex 宿主的原生能力激活已批准的 live sub-agents，与其他 specialized skills 协作，并在当前用户/会话权限下继续工作。
+[![CI](https://github.com/Beichen-H/Loopower/actions/workflows/ci.yml/badge.svg)](https://github.com/Beichen-H/Loopower/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Beichen-H/Loopower)](https://github.com/Beichen-H/Loopower/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-84cc16.svg)](LICENSE)
 
 [English README](README.md)
+
+把一句普通 Codex 任务转换为经过审批、具有边界并由独立验证者验收的 Sub-agent 工作流——无需后台守护进程。
+
+当 Codex 宿主确实提供原生 Sub-agent 生命周期 API 时，Loopower 会把委派变成显式合同：按任务推导专业角色、在激活前等待批准、持久化轻量 `.codex-loop/`，并验证 handoff、预算、退出条件和证据。
+
+![Loopower 工作流：任务、审批、Live Sub-agents 与证据](docs/assets/loopower-overview.gif)
+
+## 30 秒开始使用
+
+```bash
+git clone https://github.com/Beichen-H/Loopower.git
+cd Loopower
+python install_local.py --verify
+```
+
+在任意 Codex 项目中输入普通任务即可；治理细节应由 Skill 提供，而不是由用户手写进 Prompt：
+
+```text
+$prompt-to-loop-engineering
+为这个应用增加 CSV 导出，保持现有 API 不变，并且不要安装新依赖。
+```
+
+面对非平凡任务，Loopower 应先展示建议阵容、工具边界、循环预算和退出条件，然后停在：
+
+```text
+STOP — Waiting for user approval
+```
+
+回复 `GO` 后才允许创建 Scaffold 并请求宿主激活原生 Sub-agent。若宿主没有授权的生命周期 API，Loopower 会 fail closed，不会把主线程中的角色扮演伪装成 Live Sub-agent。
+
+## 为什么使用它
+
+| 无治理执行 | Loopower 治理模式 |
+|---|---|
+| 委派和停止规则只存在于会话上下文。 | 角色、预算、进展信号和退出路径成为经过验证的项目本地合同。 |
+| 实施者可能事实上自行验收。 | 强制验收路径必须经过独立、只读的 Evaluator。 |
+| 重复规划可能在没有可测进展时持续发生。 | 运行时长、迭代、Token 与无进展上限均显式声明并绑定证据。 |
+| 事后难以还原配置变化。 | SHA-256 绑定可以发现 Scaffold 与 Evidence 漂移。 |
+
+Loopower 不会授予权限、创造不存在的宿主 API，也不是操作系统沙箱。严格 Token 中断仍依赖宿主提供权威计数器；它的职责是把隐式工作流预期转换成可检查的合同与确定性的验证失败。
+
+当前发布的 [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md) 版本为 `3.1.0`。它把自然语言任务转换为经过验证的 `loop_design_result`，并在显式批准后生成轻量 `.codex-loop/` Agent Config Scaffold。本仓库不包含独立 Runtime Engine；Codex 始终在当前用户和会话权限下担任宿主执行器。
 
 ## 架构总览
 
@@ -112,8 +150,8 @@ meta-skills-library/
 克隆仓库：
 
 ```bash
-git clone https://github.com/Beichen-H/meta-skills.git
-cd meta-skills
+git clone https://github.com/Beichen-H/Loopower.git
+cd Loopower
 ```
 
 安装到本地 Codex skills 目录，并验证内置 LoopSpec：

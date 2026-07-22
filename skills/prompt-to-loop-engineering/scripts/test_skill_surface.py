@@ -432,6 +432,8 @@ class SkillSurfaceTests(unittest.TestCase):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
         for content in (readme, readme_cn):
+            self.assertIn("git clone https://github.com/Beichen-H/Loopower.git", content)
+            self.assertNotIn("Beichen-H/meta-skills", content)
             for phrase in [
                 "git clone",
                 "install_local.py --verify",
@@ -499,7 +501,7 @@ class SkillSurfaceTests(unittest.TestCase):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
         for phrase in (
-            "Governed sub-agent loops for every host-capable GPT model",
+            "Turn a short Codex task into an approved, bounded sub-agent workflow",
             "Making sub-agent delegation explicit across model presets",
             "standard models and normal reasoning presets",
             "does not create a missing host API",
@@ -507,7 +509,7 @@ class SkillSurfaceTests(unittest.TestCase):
         ):
             self.assertIn(phrase, readme)
         for phrase in (
-            "让所有宿主能力兼容的 GPT 模型使用受治理的 Sub-agent Loop",
+            "把一句普通 Codex 任务转换为经过审批",
             "让不同模型预设显式启用 Sub-agent 委派",
             "标准模型和正常推理强度预设",
             "不会凭空创建宿主 API",
@@ -519,6 +521,10 @@ class SkillSurfaceTests(unittest.TestCase):
         self.require_full_repository()
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         readme_cn = (REPO_ROOT / "README-CN.md").read_text(encoding="utf-8")
+        for content in (readme, readme_cn):
+            self.assertIn("docs/assets/loopower-overview.gif", content)
+        self.assertTrue((REPO_ROOT / "docs" / "assets" / "loopower-overview.gif").is_file())
+        self.assertTrue((REPO_ROOT / "docs" / "assets" / "loopower-social-preview.png").is_file())
         self.assertEqual(readme.count("```mermaid"), 3)
         self.assertEqual(readme_cn.count("```mermaid"), 3)
         self.assertLess(readme.index("## Architecture at a glance"), readme.index("## What it gives Codex"))
@@ -752,6 +758,53 @@ class SkillSurfaceTests(unittest.TestCase):
                 if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}
             ]
             self.assertEqual(installed_cache, [], f"Installer copied generated cache: {installed_cache}")
+
+            replacement = subprocess.run(
+                [
+                    sys.executable,
+                    str(installer),
+                    "--target",
+                    str(target_root),
+                    "--force",
+                    "--verify",
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                replacement.returncode,
+                0,
+                "Forced reinstall must replace copied read-only directories.\n"
+                f"STDOUT:\n{replacement.stdout}\nSTDERR:\n{replacement.stderr}",
+            )
+
+    def test_python_installer_verifies_a_relative_target(self) -> None:
+        self.require_full_repository()
+        installer = REPO_ROOT / "install_local.py"
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as tmp:
+            target_root = Path(tmp)
+            relative_target = target_root.relative_to(REPO_ROOT)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(installer),
+                    "--target",
+                    str(relative_target),
+                    "--verify",
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                "Relative install targets must resolve before verification.\n"
+                f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}",
+            )
 
     def test_python_installer_dry_run_does_not_write_target(self) -> None:
         self.require_full_repository()

@@ -1,14 +1,52 @@
 # Loopower Library
 
-Portable, contract-first skills for Codex-native agent workflows.
-
-**Governed sub-agent loops for every host-capable GPT model.** Instead of waiting for a model to delegate spontaneously, Loopower turns sub-agent activation, handoffs, loop budgets, and exit conditions into validated project-local contracts.
-
-The first published skill is [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md), version `3.1.0`: a Codex-native Loop Agent Builder with topology-derived professional roles, verified request normalization, primary-output guarantees, configuration-bound evidence, atomic replan approval, Evidence-Locked DAG Execution Governance, and access-mode-based reviewer isolation. It turns a natural-language task into a validated `loop_design_result`, persists a lightweight `.codex-loop/` Agent Config Scaffold when requested, and governs approval, host-native live sub-agent activation, and post-hoc evidence validation without taking exclusive control of the session.
-
-This project does not contain an independent Runtime Engine. Codex is the host executor: it reads project-local configuration, respects guardrails, activates approved live sub-agents through the current Codex host when available, cooperates with other specialized skills, and continues work under the active user/session permissions.
+[![CI](https://github.com/Beichen-H/Loopower/actions/workflows/ci.yml/badge.svg)](https://github.com/Beichen-H/Loopower/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Beichen-H/Loopower)](https://github.com/Beichen-H/Loopower/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-84cc16.svg)](LICENSE)
 
 [中文说明](README-CN.md)
+
+Turn a short Codex task into an approved, bounded sub-agent workflow—with independent verification and no background daemon.
+
+Loopower makes delegation explicit when the active Codex host exposes native sub-agent lifecycle APIs. It derives task-specific roles, pauses for approval, persists a lightweight `.codex-loop/` contract, and validates handoffs, budgets, exit conditions, and evidence.
+
+![Loopower workflow: prompt, approval, live sub-agents, and evidence](docs/assets/loopower-overview.gif)
+
+## Try it in 30 seconds
+
+```bash
+git clone https://github.com/Beichen-H/Loopower.git
+cd Loopower
+python install_local.py --verify
+```
+
+Open a Codex project and enter a normal task—the governance mechanics stay in the Skill instead of your prompt:
+
+```text
+$prompt-to-loop-engineering
+Add CSV export to this app. Keep the existing API stable and do not install new dependencies.
+```
+
+For a non-trivial task, Loopower should first show the proposed role lineup, tool boundaries, loop budgets, and exit conditions, then stop at:
+
+```text
+STOP — Waiting for user approval
+```
+
+Reply `GO` to approve scaffold creation and host-native sub-agent activation. If the host does not expose an authorized lifecycle API, Loopower fails closed instead of pretending inline role-play is a live sub-agent.
+
+## Why use it
+
+| Without governance | With Loopower |
+|---|---|
+| Delegation and stopping rules live only in conversation context. | Roles, budgets, progress signals, and exits are validated project-local contracts. |
+| The implementer may effectively review its own work. | Mandatory acceptance paths are dominated by an independent read-only evaluator. |
+| Repeated planning can continue without measurable progress. | Runtime, iteration, token, and no-progress limits are explicit and evidence-bound. |
+| Configuration changes are difficult to reconstruct later. | SHA-256 bindings expose scaffold and evidence drift. |
+
+Loopower does not add permissions, create missing host APIs, or provide an OS sandbox. Strict token interruption still depends on an authoritative counter exposed by the host. Its job is to turn implicit workflow expectations into inspectable contracts and deterministic validation failures.
+
+The published [`prompt-to-loop-engineering`](skills/prompt-to-loop-engineering/SKILL.md) Skill is version `3.1.0`. It converts a natural-language task into a validated `loop_design_result` and, after explicit approval, a lightweight `.codex-loop/` Agent Config Scaffold. The repository contains no independent Runtime Engine: Codex remains the host executor under the active user/session permissions.
 
 ## Architecture at a glance
 
@@ -115,8 +153,8 @@ meta-skills-library/
 Clone the repository:
 
 ```bash
-git clone https://github.com/Beichen-H/meta-skills.git
-cd meta-skills
+git clone https://github.com/Beichen-H/Loopower.git
+cd Loopower
 ```
 
 Install the skill into the local Codex skills directory and verify the bundled LoopSpec:

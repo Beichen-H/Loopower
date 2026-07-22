@@ -1,1 +1,4 @@
 .worktrees/
+.tmp/
+__pycache__/
+*.py[cod]
